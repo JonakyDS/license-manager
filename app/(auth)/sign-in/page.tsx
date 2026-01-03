@@ -63,7 +63,7 @@ export default function SignInPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">
       <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
+        <CardHeader>
           <CardTitle className="text-2xl font-bold">Sign in</CardTitle>
           <CardDescription>
             Enter your email and password to sign in to your account
@@ -114,7 +114,7 @@ export default function SignInPage() {
                 )}
               />
             </CardContent>
-            <CardFooter className="flex flex-col space-y-4">
+            <CardFooter className="flex-col items-stretch gap-4 pt-6">
               <Button
                 type="submit"
                 className="w-full"
