@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignOutButton } from "./sign-out-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default async function DashboardPage() {
   const session = await auth.api.getSession({
@@ -21,6 +22,7 @@ export default async function DashboardPage() {
             <span className="text-sm text-zinc-600 dark:text-zinc-400">
               {session.user.email}
             </span>
+            <ThemeToggle />
             <SignOutButton />
           </div>
         </div>
