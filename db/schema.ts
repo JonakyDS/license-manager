@@ -6,6 +6,7 @@ import {
   boolean,
   index,
   pgEnum,
+  integer,
 } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
@@ -15,6 +16,12 @@ export const productTypeEnum = pgEnum("product_type", [
   "theme",
   "source_code",
   "other",
+]);
+
+export const licenseStatusEnum = pgEnum("license_status", [
+  "active",
+  "expired",
+  "revoked",
 ]);
 
 export const user = pgTable("user", {
@@ -126,4 +133,81 @@ export const product = pgTable(
       .notNull(),
   },
   (table) => [index("product_slug_idx").on(table.slug)]
+);
+
+export const license = pgTable(
+  "license",
+  {
+    id: text("id").primaryKey(),
+    productId: text("product_id")
+      .notNull()
+      .references(() => product.id, { onDelete: "cascade" }),
+    licenseKey: text("license_key").notNull().unique(),
+    customerName: text("customer_name"),
+    customerEmail: text("customer_email"),
+    status: licenseStatusEnum("status").default("active").notNull(),
+    validityDays: integer("validity_days").default(365).notNull(),
+    activatedAt: timestamp("activated_at"),
+    expiresAt: timestamp("expires_at"),
+    maxDomainChanges: integer("max_domain_changes").default(3).notNull(),
+    domainChangesUsed: integer("domain_changes_used").default(0).notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("license_key_idx").on(table.licenseKey),
+    index("license_key_status_idx").on(table.licenseKey, table.status),
+    index("license_product_id_idx").on(table.productId),
+  ]
+);
+
+export const licenseActivation = pgTable(
+  "license_activation",
+  {
+    id: text("id").primaryKey(),
+    licenseId: text("license_id")
+      .notNull()
+      .references(() => license.id, { onDelete: "cascade" }),
+    domain: text("domain").notNull(),
+    ipAddress: text("ip_address"),
+    isActive: boolean("is_active").default(true).notNull(),
+    activatedAt: timestamp("activated_at"),
+    deactivatedAt: timestamp("deactivated_at"),
+    deactivationReason: text("deactivation_reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("activation_domain_idx").on(table.domain),
+    index("activation_license_active_idx").on(table.licenseId, table.isActive),
+  ]
+);
+
+export const productRelations = relations(product, ({ many }) => ({
+  licenses: many(license),
+}));
+
+export const licenseRelations = relations(license, ({ one, many }) => ({
+  product: one(product, {
+    fields: [license.productId],
+    references: [product.id],
+  }),
+  activations: many(licenseActivation),
+}));
+
+export const licenseActivationRelations = relations(
+  licenseActivation,
+  ({ one }) => ({
+    license: one(license, {
+      fields: [licenseActivation.licenseId],
+      references: [license.id],
+    }),
+  })
 );
