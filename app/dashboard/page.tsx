@@ -1,16 +1,17 @@
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { SignOutButton } from "./sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export default async function DashboardPage() {
+  // Session is guaranteed by layout.tsx - no need to redirect here
   const session = await auth.api.getSession({
     headers: await headers(),
   });
 
+  // This should never happen due to layout protection, but TypeScript needs it
   if (!session) {
-    redirect("/sign-in");
+    throw new Error("Unauthorized");
   }
 
   return (

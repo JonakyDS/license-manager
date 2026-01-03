@@ -12,9 +12,14 @@ export function SignOutButton() {
 
   const handleSignOut = async () => {
     setIsLoading(true);
-    await signOut();
-    router.push("/sign-in");
-    router.refresh();
+    try {
+      await signOut();
+      router.push("/sign-in");
+      router.refresh();
+    } catch (error) {
+      console.error("Sign out failed:", error);
+      setIsLoading(false);
+    }
   };
 
   return (
