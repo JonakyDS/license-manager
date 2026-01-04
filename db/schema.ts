@@ -24,6 +24,13 @@ export const licenseStatusEnum = pgEnum("license_status", [
   "revoked",
 ]);
 
+export const csvUploadStatusEnum = pgEnum("csv_upload_status", [
+  "pending",
+  "processing",
+  "processed",
+  "failed",
+]);
+
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -207,6 +214,44 @@ export const licenseActivationRelations = relations(
   ({ one }) => ({
     license: one(license, {
       fields: [licenseActivation.licenseId],
+      references: [license.id],
+    }),
+  })
+);
+
+export const naldaCsvUploadRequest = pgTable(
+  "nalda_csv_upload_request",
+  {
+    id: text("id").primaryKey(),
+    licenseId: text("license_id")
+      .notNull()
+      .references(() => license.id, { onDelete: "cascade" }),
+    domain: text("domain").notNull(),
+    sftpHost: text("sftp_host").notNull(),
+    sftpPort: integer("sftp_port").default(22).notNull(),
+    sftpUsername: text("sftp_username").notNull(),
+    sftpPassword: text("sftp_password").notNull(),
+    csvFileKey: text("csv_file_key").notNull(),
+    status: csvUploadStatusEnum("status").default("pending").notNull(),
+    processedAt: timestamp("processed_at"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("csv_upload_license_id_idx").on(table.licenseId),
+    index("csv_upload_status_idx").on(table.status),
+  ]
+);
+
+export const naldaCsvUploadRequestRelations = relations(
+  naldaCsvUploadRequest,
+  ({ one }) => ({
+    license: one(license, {
+      fields: [naldaCsvUploadRequest.licenseId],
       references: [license.id],
     }),
   })
