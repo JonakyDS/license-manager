@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { AdminMobileSidebar } from "./admin-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -16,12 +17,24 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BellIcon, UserIcon, LogOutIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
+import { signOut } from "@/lib/auth-client";
 
 interface AdminHeaderProps {
   className?: string;
 }
 
 export function AdminHeader({ className }: AdminHeaderProps) {
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      router.push("/sign-in");
+      router.refresh();
+    } catch (error) {
+      console.error("Sign out failed:", error);
+    }
+  };
   return (
     <header
       className={cn(
@@ -75,11 +88,9 @@ export function AdminHeader({ className }: AdminHeaderProps) {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/dashboard/sign-out-button">
-                <LogOutIcon className="mr-2 size-4" />
-                Sign out
-              </Link>
+            <DropdownMenuItem onClick={handleSignOut}>
+              <LogOutIcon className="mr-2 size-4" />
+              Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
