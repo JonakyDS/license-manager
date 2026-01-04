@@ -69,6 +69,7 @@
     "react-resizable-panels": "^4.2.0",
     "recharts": "^2.15.4",
     "sonner": "^2.0.7",
+    "ssh2-sftp-client": "^12.0.1",
     "tailwind-merge": "^3.4.0",
     "vaul": "^1.1.2",
     "zod": "^4.3.4"
@@ -79,6 +80,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ssh2-sftp-client": "^9.0.6",
     "drizzle-kit": "^0.31.8",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
