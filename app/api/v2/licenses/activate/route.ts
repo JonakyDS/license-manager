@@ -12,7 +12,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/db/drizzle";
 import { license, licenseActivation } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import {
   successResponse,
   errorResponse,
@@ -31,6 +31,7 @@ import {
   getClientIdentifier,
   rateLimitExceededResponse,
   addRateLimitHeaders,
+  recordFailedAttempt,
 } from "@/lib/api/v2/rate-limit";
 import type { ActivateResponseData } from "@/lib/api/v2/types";
 
@@ -45,6 +46,9 @@ export async function POST(request: NextRequest) {
     if (rateLimitResult && !rateLimitResult.success) {
       return rateLimitExceededResponse(rateLimitResult);
     }
+
+    // Store for adding headers to response
+    const rateLimit = rateLimitResult;
 
     // Parse and validate request body
     const parseResult = await parseRequestBody(request, activateRequestSchema);
@@ -64,6 +68,8 @@ export async function POST(request: NextRequest) {
     );
 
     if (!validation.valid) {
+      // Record failed attempt for brute force protection
+      await recordFailedAttempt(license_key);
       return validation.error;
     }
 
@@ -80,7 +86,7 @@ export async function POST(request: NextRequest) {
 
     // Case 1: Already activated on the same domain (idempotent)
     if (existingActivation && existingActivation.domain === domain) {
-      return successResponse<ActivateResponseData>(
+      const response = successResponse<ActivateResponseData>(
         {
           license_key: licenseData.licenseKey,
           domain: domain,
@@ -103,6 +109,7 @@ export async function POST(request: NextRequest) {
         },
         "License already activated on this domain"
       );
+      return addRateLimitHeaders(response, rateLimit);
     }
 
     // Case 2: Already activated on a different domain - domain change
@@ -116,36 +123,44 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Deactivate the old domain
-      await db
-        .update(licenseActivation)
-        .set({
-          isActive: false,
-          deactivatedAt: new Date(),
-          deactivationReason: `Domain changed to ${domain}`,
-        })
-        .where(eq(licenseActivation.id, existingActivation.id));
-
-      // Create new activation for the new domain
+      // Perform domain change atomically in a transaction
       const newActivationId = generateId();
-      await db.insert(licenseActivation).values({
-        id: newActivationId,
-        licenseId: licenseData.id,
-        domain: domain,
-        ipAddress: ipAddress,
-        isActive: true,
-        activatedAt: new Date(),
+      await db.transaction(async (tx) => {
+        // Deactivate the old domain
+        await tx
+          .update(licenseActivation)
+          .set({
+            isActive: false,
+            deactivatedAt: new Date(),
+            deactivationReason: `Domain changed to ${domain}`,
+          })
+          .where(
+            and(
+              eq(licenseActivation.id, existingActivation.id),
+              eq(licenseActivation.isActive, true)
+            )
+          );
+
+        // Create new activation for the new domain
+        await tx.insert(licenseActivation).values({
+          id: newActivationId,
+          licenseId: licenseData.id,
+          domain: domain,
+          ipAddress: ipAddress,
+          isActive: true,
+          activatedAt: new Date(),
+        });
+
+        // Increment domain changes used
+        await tx
+          .update(license)
+          .set({
+            domainChangesUsed: licenseData.domainChangesUsed + 1,
+          })
+          .where(eq(license.id, licenseData.id));
       });
 
-      // Increment domain changes used
-      await db
-        .update(license)
-        .set({
-          domainChangesUsed: licenseData.domainChangesUsed + 1,
-        })
-        .where(eq(license.id, licenseData.id));
-
-      return successResponse<ActivateResponseData>(
+      const response = successResponse<ActivateResponseData>(
         {
           license_key: licenseData.licenseKey,
           domain: domain,
@@ -168,6 +183,7 @@ export async function POST(request: NextRequest) {
         },
         `License moved from ${existingActivation.domain} to ${domain}`
       );
+      return addRateLimitHeaders(response, rateLimit);
     }
 
     // Case 3: First-time activation
@@ -175,27 +191,30 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(now);
     expiresAt.setDate(expiresAt.getDate() + licenseData.validityDays);
 
-    // Create activation record
+    // Perform first-time activation atomically in a transaction
     const activationId = generateId();
-    await db.insert(licenseActivation).values({
-      id: activationId,
-      licenseId: licenseData.id,
-      domain: domain,
-      ipAddress: ipAddress,
-      isActive: true,
-      activatedAt: now,
+    await db.transaction(async (tx) => {
+      // Create activation record
+      await tx.insert(licenseActivation).values({
+        id: activationId,
+        licenseId: licenseData.id,
+        domain: domain,
+        ipAddress: ipAddress,
+        isActive: true,
+        activatedAt: now,
+      });
+
+      // Update license with activation and expiration dates
+      await tx
+        .update(license)
+        .set({
+          activatedAt: now,
+          expiresAt: expiresAt,
+        })
+        .where(eq(license.id, licenseData.id));
     });
 
-    // Update license with activation and expiration dates
-    await db
-      .update(license)
-      .set({
-        activatedAt: now,
-        expiresAt: expiresAt,
-      })
-      .where(eq(license.id, licenseData.id));
-
-    return successResponse<ActivateResponseData>(
+    const response = successResponse<ActivateResponseData>(
       {
         license_key: licenseData.licenseKey,
         domain: domain,
@@ -216,6 +235,7 @@ export async function POST(request: NextRequest) {
       },
       "License activated successfully"
     );
+    return addRateLimitHeaders(response, rateLimit);
   } catch (error) {
     logApiError(endpoint, error);
 

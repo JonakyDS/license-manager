@@ -33,6 +33,7 @@ import {
   getClientIdentifier,
   rateLimitExceededResponse,
   recordFailedAttempt,
+  addRateLimitHeaders,
 } from "@/lib/api/v2/rate-limit";
 import type { ValidateResponseData } from "@/lib/api/v2/types";
 
@@ -47,6 +48,9 @@ export async function POST(request: NextRequest) {
     if (rateLimitResult && !rateLimitResult.success) {
       return rateLimitExceededResponse(rateLimitResult);
     }
+
+    // Store for adding headers to response
+    const rateLimit = rateLimitResult;
 
     // Parse and validate request body
     const parseResult = await parseRequestBody(request, validateRequestSchema);
@@ -150,13 +154,13 @@ export async function POST(request: NextRequest) {
     if (activation.domain !== domain) {
       return errorResponse(
         "DOMAIN_MISMATCH",
-        `License is activated on a different domain: ${activation.domain}`,
+        "License is activated on a different domain",
         403
       );
     }
 
     // All checks passed - license is valid!
-    return successResponse<ValidateResponseData>(
+    const response = successResponse<ValidateResponseData>(
       {
         valid: true,
         license_key: licenseData.licenseKey,
@@ -173,6 +177,7 @@ export async function POST(request: NextRequest) {
       },
       "License is valid"
     );
+    return addRateLimitHeaders(response, rateLimit);
   } catch (error) {
     logApiError(endpoint, error);
 

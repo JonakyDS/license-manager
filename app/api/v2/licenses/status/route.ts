@@ -35,6 +35,8 @@ import {
   checkRateLimit,
   getClientIdentifier,
   rateLimitExceededResponse,
+  addRateLimitHeaders,
+  recordFailedAttempt,
 } from "@/lib/api/v2/rate-limit";
 import type { StatusResponseData } from "@/lib/api/v2/types";
 
@@ -49,6 +51,9 @@ export async function POST(request: NextRequest) {
     if (rateLimitResult && !rateLimitResult.success) {
       return rateLimitExceededResponse(rateLimitResult);
     }
+
+    // Store for adding headers to response
+    const rateLimit = rateLimitResult;
 
     // Parse and validate request body
     const parseResult = await parseRequestBody(request, statusRequestSchema);
@@ -65,6 +70,9 @@ export async function POST(request: NextRequest) {
     const result = await findLicenseByKeyAndProduct(license_key, product_slug);
 
     if (!result) {
+      // Record failed attempt for brute force protection
+      await recordFailedAttempt(license_key);
+
       // Check if license exists but product doesn't match
       const licenseOnly = await findLicenseByKey(license_key);
 
@@ -96,7 +104,7 @@ export async function POST(request: NextRequest) {
     // Calculate validity info
     const daysRemaining = calculateDaysRemaining(licenseData.expiresAt);
 
-    return successResponse<StatusResponseData>(
+    const response = successResponse<StatusResponseData>(
       {
         license_key: licenseData.licenseKey,
         status: currentStatus,
@@ -133,6 +141,7 @@ export async function POST(request: NextRequest) {
       },
       "License status retrieved successfully"
     );
+    return addRateLimitHeaders(response, rateLimit);
   } catch (error) {
     logApiError(endpoint, error);
 

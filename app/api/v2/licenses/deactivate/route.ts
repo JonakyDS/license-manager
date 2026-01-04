@@ -20,7 +20,8 @@ import {
   successResponse,
   errorResponse,
   parseRequestBody,
-  validateLicensePrerequisites,
+  findLicenseByKeyAndProduct,
+  findLicenseByKey,
   getActiveActivation,
   logApiRequest,
   logApiError,
@@ -30,6 +31,8 @@ import {
   checkRateLimit,
   getClientIdentifier,
   rateLimitExceededResponse,
+  addRateLimitHeaders,
+  recordFailedAttempt,
 } from "@/lib/api/v2/rate-limit";
 import type { DeactivateResponseData } from "@/lib/api/v2/types";
 
@@ -44,6 +47,9 @@ export async function POST(request: NextRequest) {
     if (rateLimitResult && !rateLimitResult.success) {
       return rateLimitExceededResponse(rateLimitResult);
     }
+
+    // Store for adding headers to response
+    const rateLimit = rateLimitResult;
 
     // Parse and validate request body
     const parseResult = await parseRequestBody(
@@ -64,40 +70,38 @@ export async function POST(request: NextRequest) {
       reason,
     });
 
-    // Validate license prerequisites (but allow expired licenses to be deactivated)
-    const result = await validateLicensePrerequisites(
-      license_key,
-      product_slug
-    );
+    // Find license and product (allow expired licenses to be deactivated)
+    const result = await findLicenseByKeyAndProduct(license_key, product_slug);
 
-    // For deactivation, we still proceed if the license is expired (just not revoked)
-    // So we need custom handling here
-    if (!result.valid) {
-      // Allow deactivation for expired licenses
-      if (result.error.status === 403) {
-        const errorBody = await result.error.json();
-        if (errorBody.error?.code !== "LICENSE_EXPIRED") {
-          return result.error;
-        }
-        // For expired licenses, we need to fetch the data differently
-        // Refetch to get the data we need
-      } else {
-        return result.error;
+    if (!result) {
+      // Record failed attempt for brute force protection
+      await recordFailedAttempt(license_key);
+
+      // Check if license exists but product doesn't match
+      const licenseOnly = await findLicenseByKey(license_key);
+
+      if (licenseOnly) {
+        return errorResponse(
+          "PRODUCT_NOT_FOUND",
+          "License does not belong to the specified product",
+          404
+        );
       }
-    }
 
-    // Refetch license data for expired case
-    const { findLicenseByKeyAndProduct } = await import("@/lib/api/v2/utils");
-    const licenseResult = await findLicenseByKeyAndProduct(
-      license_key,
-      product_slug
-    );
-
-    if (!licenseResult) {
       return errorResponse("LICENSE_NOT_FOUND", "License key not found", 404);
     }
 
-    const { license: licenseData } = licenseResult;
+    const { license: licenseData, product: productData } = result;
+
+    // Check if product is active
+    if (!productData.active) {
+      return errorResponse("PRODUCT_INACTIVE", "Product is not active", 403);
+    }
+
+    // Check if license is revoked (revoked licenses cannot be deactivated)
+    if (licenseData.status === "revoked") {
+      return errorResponse("LICENSE_REVOKED", "License has been revoked", 403);
+    }
 
     // Check for active activation on the specified domain
     const activation = await getActiveActivation(licenseData.id);
@@ -113,7 +117,7 @@ export async function POST(request: NextRequest) {
     if (activation.domain !== domain) {
       return errorResponse(
         "DOMAIN_MISMATCH",
-        `License is not activated on ${domain}. It is currently activated on ${activation.domain}`,
+        "License is not activated on this domain",
         400
       );
     }
@@ -131,7 +135,7 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(licenseActivation.id, activation.id));
 
-    return successResponse<DeactivateResponseData>(
+    const response = successResponse<DeactivateResponseData>(
       {
         license_key: licenseData.licenseKey,
         domain: domain,
@@ -142,6 +146,7 @@ export async function POST(request: NextRequest) {
       },
       "License deactivated successfully"
     );
+    return addRateLimitHeaders(response, rateLimit);
   } catch (error) {
     logApiError(endpoint, error);
 
