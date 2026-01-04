@@ -100,6 +100,40 @@ export const statusRequestSchema = z.object({
 });
 
 // ============================================================================
+// Nalda CSV Upload Request Schemas
+// ============================================================================
+
+export const naldaCsvUploadRequestSchema = z.object({
+  license_key: licenseKeySchema,
+  domain: domainSchema,
+  sftp_host: z
+    .string()
+    .min(1, "SFTP host is required")
+    .max(255, "SFTP host must be less than 255 characters"),
+  sftp_port: z.number().int().min(1).max(65535).default(22),
+  sftp_username: z
+    .string()
+    .min(1, "SFTP username is required")
+    .max(255, "SFTP username must be less than 255 characters"),
+  sftp_password: z
+    .string()
+    .min(1, "SFTP password is required")
+    .max(1024, "SFTP password must be less than 1024 characters"),
+  csv_file_key: z
+    .string()
+    .min(1, "CSV file key is required")
+    .max(512, "CSV file key must be less than 512 characters"),
+});
+
+export const listNaldaCsvUploadRequestsSchema = z.object({
+  license_key: licenseKeySchema,
+  domain: domainSchema,
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(10),
+  status: z.enum(["pending", "processing", "processed", "failed"]).optional(),
+});
+
+// ============================================================================
 // Type Exports
 // ============================================================================
 
@@ -109,3 +143,9 @@ export type DeactivateRequestValidated = z.infer<
   typeof deactivateRequestSchema
 >;
 export type StatusRequestValidated = z.infer<typeof statusRequestSchema>;
+export type NaldaCsvUploadRequestValidated = z.infer<
+  typeof naldaCsvUploadRequestSchema
+>;
+export type ListNaldaCsvUploadRequestsValidated = z.infer<
+  typeof listNaldaCsvUploadRequestsSchema
+>;

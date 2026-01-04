@@ -1,11 +1,14 @@
 /**
  * SFTP Credential Validation API
  *
+ * POST /api/v2/nalda/sftp-validate
+ *
  * Validates SFTP credentials by attempting a connection to the server.
- * Requires a valid license key in the X-License-Key header.
+ * Requires a valid license key and domain in the request body.
  *
  * Security Features:
- * - License key authentication (required)
+ * - License key and domain validation (required)
+ * - Domain must be activated for the license
  * - Rate limiting (prevents brute force attacks)
  * - Input validation with Zod
  * - Connection timeout (prevents hanging)
@@ -15,12 +18,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import SftpClient from "ssh2-sftp-client";
+import { db } from "@/db/drizzle";
+import { license } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import {
   checkRateLimit,
   getClientIdentifier,
   rateLimitExceededResponse,
 } from "@/lib/api/v2/rate-limit";
-import { findLicenseByKey, isLicenseExpired } from "@/lib/api/v2/utils";
 
 // ============================================================================
 // Constants
@@ -35,7 +40,46 @@ const MAX_PASSWORD_LENGTH = 256;
 // Validation Schema
 // ============================================================================
 
-const sftpCredentialsSchema = z.object({
+/**
+ * Validates and normalizes a domain string.
+ */
+const domainSchema = z
+  .string()
+  .min(1, "Domain is required")
+  .transform((val) => {
+    let domain = val.toLowerCase().trim();
+    domain = domain.replace(/^https?:\/\//, "");
+    domain = domain.replace(/\/$/, "");
+    domain = domain.split("/")[0];
+    return domain;
+  })
+  .refine(
+    (val) => {
+      const domainRegex =
+        /^(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?::\d{1,5})?$/;
+      return domainRegex.test(val);
+    },
+    { message: "Invalid domain format" }
+  );
+
+/**
+ * Validates a license key format (XXXX-XXXX-XXXX-XXXX).
+ */
+const licenseKeySchema = z
+  .string()
+  .min(1, "License key is required")
+  .transform((val) => val.toUpperCase().trim())
+  .refine(
+    (val) => {
+      const keyRegex = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+      return keyRegex.test(val);
+    },
+    { message: "Invalid license key format. Expected: XXXX-XXXX-XXXX-XXXX" }
+  );
+
+const sftpValidateRequestSchema = z.object({
+  license_key: licenseKeySchema,
+  domain: domainSchema,
   hostname: z
     .string()
     .min(1, "Hostname is required")
@@ -81,7 +125,7 @@ const sftpCredentialsSchema = z.object({
     ),
 });
 
-type SftpCredentials = z.infer<typeof sftpCredentialsSchema>;
+type SftpValidateRequest = z.infer<typeof sftpValidateRequestSchema>;
 
 // ============================================================================
 // Types
@@ -269,6 +313,13 @@ function errorResponse(
 // SFTP Connection Helper
 // ============================================================================
 
+interface SftpCredentials {
+  hostname: string;
+  port: number;
+  username: string;
+  password: string;
+}
+
 async function validateSftpConnection(
   credentials: SftpCredentials
 ): Promise<{ success: true; cwd: string } | { success: false; error: Error }> {
@@ -308,6 +359,78 @@ async function validateSftpConnection(
 }
 
 // ============================================================================
+// License and Domain Validation Helper
+// ============================================================================
+
+async function validateLicenseAndDomain(
+  licenseKey: string,
+  domain: string
+): Promise<
+  | { valid: true; licenseId: string }
+  | { valid: false; error: string; code: string }
+> {
+  // Find the license by key
+  const licenseRecord = await db.query.license.findFirst({
+    where: eq(license.licenseKey, licenseKey),
+    with: {
+      activations: true,
+    },
+  });
+
+  if (!licenseRecord) {
+    return {
+      valid: false,
+      error: "Invalid license key",
+      code: "LICENSE_NOT_FOUND",
+    };
+  }
+
+  // Check if license is active
+  if (licenseRecord.status === "revoked") {
+    return {
+      valid: false,
+      error: "License has been revoked",
+      code: "LICENSE_REVOKED",
+    };
+  }
+
+  if (licenseRecord.status === "expired") {
+    return {
+      valid: false,
+      error: "License has expired",
+      code: "LICENSE_EXPIRED",
+    };
+  }
+
+  // Check if license is expired by date
+  if (licenseRecord.expiresAt && new Date() > licenseRecord.expiresAt) {
+    return {
+      valid: false,
+      error: "License has expired",
+      code: "LICENSE_EXPIRED",
+    };
+  }
+
+  // Find active activation for this domain
+  const activation = licenseRecord.activations.find(
+    (a) => a.isActive && a.domain.toLowerCase() === domain.toLowerCase()
+  );
+
+  if (!activation) {
+    return {
+      valid: false,
+      error: "License is not activated on the specified domain",
+      code: "DOMAIN_MISMATCH",
+    };
+  }
+
+  return {
+    valid: true,
+    licenseId: licenseRecord.id,
+  };
+}
+
+// ============================================================================
 // API Route Handler
 // ============================================================================
 
@@ -328,58 +451,7 @@ export async function POST(
     }
 
     // ========================================================================
-    // 2. License Key Authentication
-    // ========================================================================
-    const licenseKey = request.headers.get("X-License-Key");
-
-    if (!licenseKey) {
-      return errorResponse(
-        "LICENSE_KEY_REQUIRED",
-        "X-License-Key header is required",
-        401
-      );
-    }
-
-    // Validate license key format (XXXX-XXXX-XXXX-XXXX)
-    const licenseKeyRegex =
-      /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i;
-    if (!licenseKeyRegex.test(licenseKey)) {
-      return errorResponse(
-        "INVALID_LICENSE_KEY_FORMAT",
-        "Invalid license key format",
-        401
-      );
-    }
-
-    // Find and validate the license
-    const licenseResult = await findLicenseByKey(licenseKey.toUpperCase());
-
-    if (!licenseResult) {
-      return errorResponse("LICENSE_NOT_FOUND", "Invalid license key", 401);
-    }
-
-    const { license: licenseData, product: productData } = licenseResult;
-
-    // Check if license is revoked
-    if (licenseData.status === "revoked") {
-      return errorResponse("LICENSE_REVOKED", "License has been revoked", 403);
-    }
-
-    // Check if license is expired
-    if (
-      licenseData.status === "expired" ||
-      isLicenseExpired(licenseData.expiresAt)
-    ) {
-      return errorResponse("LICENSE_EXPIRED", "License has expired", 403);
-    }
-
-    // Check if product is active
-    if (!productData.active) {
-      return errorResponse("PRODUCT_INACTIVE", "Product is not active", 403);
-    }
-
-    // ========================================================================
-    // 3. Parse and Validate Request Body
+    // 2. Parse and Validate Request Body
     // ========================================================================
     let body: unknown;
     try {
@@ -392,7 +464,7 @@ export async function POST(
       );
     }
 
-    const validationResult = sftpCredentialsSchema.safeParse(body);
+    const validationResult = sftpValidateRequestSchema.safeParse(body);
 
     if (!validationResult.success) {
       const fieldErrors: Record<string, string[]> = {};
@@ -412,12 +484,34 @@ export async function POST(
       );
     }
 
-    const credentials = validationResult.data;
+    const { license_key, domain, hostname, port, username, password } =
+      validationResult.data;
+
+    // ========================================================================
+    // 3. Validate License and Domain
+    // ========================================================================
+    const licenseValidation = await validateLicenseAndDomain(
+      license_key,
+      domain
+    );
+
+    if (!licenseValidation.valid) {
+      return errorResponse(
+        licenseValidation.code,
+        licenseValidation.error,
+        licenseValidation.code === "LICENSE_NOT_FOUND" ? 404 : 403
+      );
+    }
 
     // ========================================================================
     // 4. Validate SFTP Connection
     // ========================================================================
-    const connectionResult = await validateSftpConnection(credentials);
+    const connectionResult = await validateSftpConnection({
+      hostname,
+      port,
+      username,
+      password,
+    });
 
     if (!connectionResult.success) {
       const mappedError = mapSftpError(connectionResult.error);
@@ -425,9 +519,9 @@ export async function POST(
       // Log error for debugging (in production, use proper logging service)
       if (process.env.NODE_ENV === "development") {
         console.error("[SFTP Validation Error]", {
-          hostname: credentials.hostname,
-          port: credentials.port,
-          username: credentials.username,
+          hostname,
+          port,
+          username,
           error: connectionResult.error.message,
         });
       }
@@ -444,9 +538,9 @@ export async function POST(
     // ========================================================================
     return successResponse<SftpValidationResult>(
       {
-        hostname: credentials.hostname,
-        port: credentials.port,
-        username: credentials.username,
+        hostname,
+        port,
+        username,
         connected: true,
         serverInfo: {
           currentDirectory: connectionResult.cwd,

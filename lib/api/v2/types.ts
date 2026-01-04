@@ -43,6 +43,9 @@ export type ErrorCode =
   | "NOT_ACTIVATED"
   | "ACTIVATION_NOT_FOUND"
   | "RATE_LIMIT_EXCEEDED"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "NOT_FOUND"
   | "INTERNAL_ERROR";
 
 // ============================================================================
@@ -150,5 +153,50 @@ export interface StatusResponseData {
   timestamps: {
     created_at: string;
     updated_at: string;
+  };
+}
+
+// ============================================================================
+// Nalda CSV Upload Request Types
+// ============================================================================
+
+export interface NaldaCsvUploadRequest {
+  license_key: string;
+  domain: string;
+  sftp_host: string;
+  sftp_port: number;
+  sftp_username: string;
+  sftp_password: string;
+  csv_file_key: string;
+}
+
+export interface NaldaCsvUploadRequestResponseData {
+  id: string;
+  license_id: string;
+  domain: string;
+  csv_file_key: string;
+  status: "pending" | "processing" | "processed" | "failed";
+  created_at: string;
+}
+
+export interface NaldaCsvUploadRequestListItem {
+  id: string;
+  domain: string;
+  csv_file_key: string;
+  status: "pending" | "processing" | "processed" | "failed";
+  processed_at: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface NaldaCsvUploadRequestListResponseData {
+  requests: NaldaCsvUploadRequestListItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    total_pages: number;
+    has_next: boolean;
+    has_prev: boolean;
   };
 }
