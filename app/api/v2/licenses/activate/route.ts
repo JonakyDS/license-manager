@@ -26,12 +26,26 @@ import {
   logApiError,
 } from "@/lib/api/utils";
 import { activateRequestSchema } from "@/lib/api/validation";
+import {
+  checkRateLimit,
+  getClientIdentifier,
+  rateLimitExceededResponse,
+  addRateLimitHeaders,
+} from "@/lib/api/rate-limit";
 import type { ActivateResponseData } from "@/lib/api/types";
 
 export async function POST(request: NextRequest) {
   const endpoint = "/api/v2/licenses/activate";
 
   try {
+    // Check rate limit (activation has stricter limits)
+    const clientIp = getClientIdentifier(request);
+    const rateLimitResult = await checkRateLimit(clientIp, "activation");
+
+    if (rateLimitResult && !rateLimitResult.success) {
+      return rateLimitExceededResponse(rateLimitResult);
+    }
+
     // Parse and validate request body
     const parseResult = await parseRequestBody(request, activateRequestSchema);
 

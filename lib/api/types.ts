@@ -42,6 +42,7 @@ export type ErrorCode =
   | "ALREADY_ACTIVATED"
   | "NOT_ACTIVATED"
   | "ACTIVATION_NOT_FOUND"
+  | "RATE_LIMIT_EXCEEDED"
   | "INTERNAL_ERROR";
 
 // ============================================================================

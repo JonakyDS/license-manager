@@ -28,12 +28,26 @@ import {
   logApiError,
 } from "@/lib/api/utils";
 import { validateRequestSchema } from "@/lib/api/validation";
+import {
+  checkRateLimit,
+  getClientIdentifier,
+  rateLimitExceededResponse,
+  recordFailedAttempt,
+} from "@/lib/api/rate-limit";
 import type { ValidateResponseData } from "@/lib/api/types";
 
 export async function POST(request: NextRequest) {
   const endpoint = "/api/v2/licenses/validate";
 
   try {
+    // Check rate limit
+    const clientIp = getClientIdentifier(request);
+    const rateLimitResult = await checkRateLimit(clientIp, "general");
+
+    if (rateLimitResult && !rateLimitResult.success) {
+      return rateLimitExceededResponse(rateLimitResult);
+    }
+
     // Parse and validate request body
     const parseResult = await parseRequestBody(request, validateRequestSchema);
 
@@ -49,6 +63,9 @@ export async function POST(request: NextRequest) {
     const result = await findLicenseByKeyAndProduct(license_key, product_slug);
 
     if (!result) {
+      // Record failed attempt for brute force protection
+      await recordFailedAttempt(license_key);
+
       // Check if license exists but product doesn't match
       const licenseOnly = await findLicenseByKey(license_key);
 

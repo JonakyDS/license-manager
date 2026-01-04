@@ -31,12 +31,25 @@ import {
   logApiError,
 } from "@/lib/api/utils";
 import { statusRequestSchema } from "@/lib/api/validation";
+import {
+  checkRateLimit,
+  getClientIdentifier,
+  rateLimitExceededResponse,
+} from "@/lib/api/rate-limit";
 import type { StatusResponseData } from "@/lib/api/types";
 
 export async function POST(request: NextRequest) {
   const endpoint = "/api/v2/licenses/status";
 
   try {
+    // Check rate limit
+    const clientIp = getClientIdentifier(request);
+    const rateLimitResult = await checkRateLimit(clientIp, "general");
+
+    if (rateLimitResult && !rateLimitResult.success) {
+      return rateLimitExceededResponse(rateLimitResult);
+    }
+
     // Parse and validate request body
     const parseResult = await parseRequestBody(request, statusRequestSchema);
 

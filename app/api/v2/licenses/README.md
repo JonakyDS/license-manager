@@ -20,8 +20,55 @@ This API is intended to be called from your plugin or theme's backend server, no
 
 Currently, these endpoints are public and rely on the secrecy of license keys. For production use, consider adding:
 - API key authentication
-- Rate limiting
 - IP whitelisting
+
+## Rate Limiting
+
+Rate limiting is implemented using **Upstash Redis** (free tier: 10,000 commands/day).
+
+### Limits
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| `/activate` | 60 requests | per hour per IP |
+| `/validate` | 60 requests | per hour per IP |
+| `/deactivate` | 60 requests | per hour per IP |
+| `/status` | 60 requests | per hour per IP |
+| Failed attempts | 60 attempts | per hour per license key |
+
+### Rate Limit Response
+
+When rate limited, the API returns:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Too many requests. Please try again in 45 seconds."
+  }
+}
+```
+
+**HTTP Status:** `429 Too Many Requests`
+
+**Headers:**
+- `Retry-After`: Seconds until the limit resets
+- `X-RateLimit-Limit`: Maximum requests allowed
+- `X-RateLimit-Remaining`: Requests remaining
+- `X-RateLimit-Reset`: Unix timestamp when the limit resets
+
+### Setup
+
+1. Create a free account at [upstash.com](https://upstash.com)
+2. Create a Redis database
+3. Add to your `.env`:
+   ```
+   UPSTASH_REDIS_REST_URL=https://your-redis.upstash.io
+   UPSTASH_REDIS_REST_TOKEN=your-token
+   ```
+
+> **Note:** Rate limiting is automatically disabled if Upstash is not configured (useful for development).
 
 ## Common Response Format
 
@@ -68,6 +115,7 @@ All endpoints return responses in a consistent format:
 | `ALREADY_ACTIVATED` | License is already activated |
 | `NOT_ACTIVATED` | License hasn't been activated yet |
 | `ACTIVATION_NOT_FOUND` | No activation record found |
+| `RATE_LIMIT_EXCEEDED` | Too many requests, try again later |
 | `INTERNAL_ERROR` | Unexpected server error |
 
 ---
@@ -420,10 +468,11 @@ const client = new LicenseClient(
 1. **Server-to-Server Only:** This API is designed for backend-to-backend communication, not browser clients
 2. **HTTPS Only:** Always use HTTPS in production
 3. **Email Masking:** Customer emails are automatically masked (e.g., `j*******@e******.com`) for privacy
-4. **Rate Limiting:** Consider adding rate limiting to prevent brute force attacks
-5. **IP Logging:** API logs IP addresses for audit purposes
-6. **License Key Secrecy:** Treat license keys like passwords
-7. **No Browser Caching:** Responses include `Cache-Control: no-store` headers
+4. **Rate Limiting:** Implemented via Upstash Redis with per-IP and per-license-key limits
+5. **Brute Force Protection:** Failed validation attempts are tracked and blocked after 5 failures
+6. **IP Logging:** API logs IP addresses for audit purposes
+7. **License Key Secrecy:** Treat license keys like passwords
+8. **No Browser Caching:** Responses include `Cache-Control: no-store` headers
 
 ---
 
@@ -433,6 +482,8 @@ const client = new LicenseClient(
 - Initial versioned release
 - Server-to-server architecture (not for browser use)
 - Customer email masking for privacy
+- **Rate limiting via Upstash Redis**
+- **Brute force protection for failed attempts**
 - Consistent JSON response format
 - Comprehensive validation with Zod schemas
 - Auto-expiration handling
