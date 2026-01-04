@@ -4,7 +4,7 @@
 
 The License API v2 provides endpoints for managing software license activations. It's designed for **server-to-server communication** — plugin/theme backends should call these endpoints, NOT browser clients.
 
-**Base URL:** `https://licence-manager-one.vercel.app/api/v2/licences`
+**Base URL:** `https://licence-manager-one.vercel.app/api/v2/licenses`
 
 **Version:** 2.0
 
@@ -126,7 +126,7 @@ All endpoints return responses in a consistent format:
 
 Activates a license key on a specific domain.
 
-**Endpoint:** `POST /api/v2/licences/activate`
+**Endpoint:** `POST /api/v2/licenses/activate`
 
 **Request Body:**
 
@@ -177,7 +177,7 @@ Activates a license key on a specific domain.
 
 Checks if a license is valid and properly activated on the requesting domain.
 
-**Endpoint:** `POST /api/v2/licences/validate`
+**Endpoint:** `POST /api/v2/licenses/validate`
 
 **Request Body:**
 
@@ -224,7 +224,7 @@ Checks if a license is valid and properly activated on the requesting domain.
 
 Removes a license from its current domain.
 
-**Endpoint:** `POST /api/v2/licences/deactivate`
+**Endpoint:** `POST /api/v2/licenses/deactivate`
 
 **Request Body:**
 
@@ -265,7 +265,7 @@ Removes a license from its current domain.
 
 Returns complete information about a license.
 
-**Endpoint:** `POST /api/v2/licences/status`
+**Endpoint:** `POST /api/v2/licenses/status`
 
 **Request Body:**
 
@@ -352,7 +352,7 @@ Returns complete information about a license.
 ```php
 <?php
 class LicenseManager {
-    private $api_url = 'https://licence-manager-one.vercel.app/api/v2/licences';
+    private $api_url = 'https://licence-manager-one.vercel.app/api/v2/licenses';
     private $product_slug = 'my-awesome-plugin';
     
     public function activate($license_key) {
@@ -456,7 +456,7 @@ class LicenseClient {
 
 // Usage
 const client = new LicenseClient(
-  'https://licence-manager-one.vercel.app/api/v2/licences',
+  'https://licence-manager-one.vercel.app/api/v2/licenses',
   'my-awesome-plugin'
 );
 ```
