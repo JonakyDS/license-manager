@@ -98,7 +98,7 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
         params.delete("page");
       }
 
-      router.push(`${pathname}?${params.toString()}`);
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
     [pathname, router, searchParams]
   );

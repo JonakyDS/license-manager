@@ -104,7 +104,7 @@ export function LicensesClient({ initialData, products }: LicensesClientProps) {
         params.delete("page");
       }
 
-      router.push(`${pathname}?${params.toString()}`);
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
     },
     [pathname, router, searchParams]
   );

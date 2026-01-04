@@ -25,7 +25,7 @@ export function AdminHeader({ className }: AdminHeaderProps) {
   return (
     <header
       className={cn(
-        "bg-background/95 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 flex h-16 items-center gap-4 border-b px-4 backdrop-blur lg:px-6",
+        "bg-background/95 supports-[backdrop-filter]:bg-background/60 flex h-16 shrink-0 items-center gap-4 border-b px-4 backdrop-blur lg:px-6",
         className
       )}
     >
