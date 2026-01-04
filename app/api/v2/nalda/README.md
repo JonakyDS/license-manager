@@ -1,10 +1,12 @@
-# Nalda CSV Upload API
+# Nalda API Documentation
 
-This document describes the API endpoints for managing Nalda CSV upload requests.
+This document describes the API endpoints for Nalda CSV upload and SFTP validation.
 
 ## Overview
 
-The Nalda CSV Upload API allows licensed users to upload CSV files using **presigned URLs**. 
+The Nalda API provides:
+1. **CSV Upload** - Upload CSV files using presigned URLs (files never touch our server)
+2. **SFTP Validation** - Validate SFTP credentials before creating upload requests
 
 **Important: CSV files are uploaded directly from the client to UploadThing's servers. The file data NEVER passes through our server.**
 
@@ -237,6 +239,129 @@ GET /api/v2/nalda/csv-upload/list?license_key=XXXX-XXXX-XXXX-XXXX&domain=example
 }
 ```
 
+### 4. Validate SFTP Credentials
+
+Validates SFTP credentials by attempting a real connection to the server. Use this endpoint to verify credentials before creating a CSV upload request.
+
+**Endpoint:** `POST /api/v2/nalda/sftp-validate`
+
+**Request Body:**
+
+```json
+{
+  "license_key": "XXXX-XXXX-XXXX-XXXX",
+  "domain": "example.com",
+  "hostname": "sftp.nalda.com",
+  "port": 22,
+  "username": "user",
+  "password": "password"
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `license_key` | string | Yes | Valid license key (format: XXXX-XXXX-XXXX-XXXX) |
+| `domain` | string | Yes | Domain activated for the license |
+| `hostname` | string | Yes | SFTP server hostname (must be a subdomain of nalda.com) |
+| `port` | number | No | SFTP port (default: 22, range: 1-65535) |
+| `username` | string | Yes | SFTP username (max 128 characters) |
+| `password` | string | Yes | SFTP password (max 256 characters) |
+
+**Important:** The `hostname` must be a subdomain of `nalda.com` (e.g., `sftp.nalda.com`, `server1.nalda.com`).
+
+**Success Response (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "hostname": "sftp.nalda.com",
+    "port": 22,
+    "username": "user",
+    "connected": true,
+    "serverInfo": {
+      "currentDirectory": "/home/user"
+    }
+  },
+  "message": "SFTP credentials are valid"
+}
+```
+
+**Error Responses:**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | VALIDATION_ERROR | Invalid request parameters |
+| 400 | HOST_NOT_FOUND | Hostname could not be resolved |
+| 400 | CONNECTION_REFUSED | Connection refused by server |
+| 400 | HOST_UNREACHABLE | Host is unreachable |
+| 400 | NETWORK_UNREACHABLE | Network is unreachable |
+| 400 | CONNECTION_RESET | Connection was reset by server |
+| 400 | PROTOCOL_ERROR | SSH handshake failed |
+| 400 | CONNECTION_ERROR | Generic connection failure |
+| 401 | AUTH_FAILED | Invalid username or password |
+| 403 | LICENSE_REVOKED | License has been revoked |
+| 403 | LICENSE_EXPIRED | License has expired |
+| 403 | DOMAIN_MISMATCH | Domain not activated for this license |
+| 404 | LICENSE_NOT_FOUND | Invalid license key |
+| 408 | CONNECTION_TIMEOUT | Connection timed out (10 second limit) |
+| 429 | RATE_LIMIT_EXCEEDED | Too many requests |
+| 500 | INTERNAL_ERROR | Server error |
+
+**Example Usage:**
+
+```typescript
+async function validateSftpCredentials(
+  licenseKey: string,
+  domain: string,
+  sftpConfig: {
+    hostname: string;
+    port?: number;
+    username: string;
+    password: string;
+  }
+): Promise<boolean> {
+  const response = await fetch("/api/v2/nalda/sftp-validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      license_key: licenseKey,
+      domain: domain,
+      hostname: sftpConfig.hostname,
+      port: sftpConfig.port ?? 22,
+      username: sftpConfig.username,
+      password: sftpConfig.password,
+    }),
+  });
+
+  const result = await response.json();
+  
+  if (!result.success) {
+    // Handle specific error codes
+    switch (result.error.code) {
+      case "AUTH_FAILED":
+        console.error("Invalid SFTP credentials");
+        break;
+      case "HOST_NOT_FOUND":
+        console.error("SFTP server hostname not found");
+        break;
+      case "CONNECTION_TIMEOUT":
+        console.error("Connection timed out");
+        break;
+      default:
+        console.error("SFTP validation failed:", result.error.message);
+    }
+    return false;
+  }
+
+  console.log("SFTP connection successful!");
+  console.log("Current directory:", result.data.serverInfo.currentDirectory);
+  return true;
+}
+```
+
 ## Security Features
 
 ### License Validation
@@ -293,27 +418,68 @@ All error responses follow this format:
 │                        COMPLETE UPLOAD FLOW                              │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  1. REQUEST PRESIGNED URL                                                │
+│  1. VALIDATE SFTP CREDENTIALS (recommended)                              │
+│     Client → Our Server: license_key + domain + SFTP credentials         │
+│     Our Server validates license, then tests SFTP connection             │
+│     Our Server → Client: success/failure with error details              │
+│                                                                          │
+│  2. REQUEST PRESIGNED URL                                                │
 │     Client → Our Server: license_key + domain                            │
 │     Our Server validates license (no file data yet)                      │
 │     Our Server → Client: presigned URL from UploadThing                  │
 │                                                                          │
-│  2. DIRECT UPLOAD (file never touches our server!)                       │
+│  3. DIRECT UPLOAD (file never touches our server!)                       │
 │     Client → UploadThing Storage: CSV file via presigned URL             │
 │     UploadThing → Client: fileKey, fileUrl                               │
 │                                                                          │
-│  3. CREATE PROCESSING REQUEST                                            │
+│  4. CREATE PROCESSING REQUEST                                            │
 │     Client → Our Server: fileKey + SFTP credentials                      │
 │     Our Server stores request in database                                │
 │                                                                          │
-│  4. CHECK STATUS (optional)                                              │
+│  5. CHECK STATUS (optional)                                              │
 │     Client → Our Server: license_key + domain                            │
 │     Our Server → Client: list of requests with status                    │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Step 1 & 2: Upload CSV to UploadThing (Direct Upload)
+### Step 1: Validate SFTP Credentials (Recommended)
+
+Before uploading, validate that the SFTP credentials are correct:
+
+```typescript
+const sftpResponse = await fetch("/api/v2/nalda/sftp-validate", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    license_key: "ABCD-1234-EFGH-5678",
+    domain: "mysite.com",
+    hostname: "sftp.nalda.com",
+    port: 22,
+    username: "uploader",
+    password: "secret"
+  })
+});
+
+const sftpResult = await sftpResponse.json();
+
+if (!sftpResult.success) {
+  // Handle error - show user-friendly message based on error code
+  if (sftpResult.error.code === "AUTH_FAILED") {
+    alert("Invalid SFTP username or password");
+  } else if (sftpResult.error.code === "HOST_NOT_FOUND") {
+    alert("SFTP server not found");
+  } else {
+    alert(sftpResult.error.message);
+  }
+  return;
+}
+
+// Credentials are valid, proceed to upload
+console.log("SFTP credentials validated successfully!");
+```
+
+### Step 2 & 3: Upload CSV to UploadThing (Direct Upload)
 
 ```typescript
 import { generateReactHelpers } from "@uploadthing/react";
@@ -336,7 +502,7 @@ const handleFileSelect = async (file: File) => {
 };
 ```
 
-### Step 3: Create CSV Upload Request
+### Step 4: Create CSV Upload Request
 
 ```typescript
 const fileKey = await handleFileSelect(csvFile);
@@ -347,7 +513,7 @@ const response = await fetch("/api/v2/nalda/csv-upload", {
   body: JSON.stringify({
     license_key: "ABCD-1234-EFGH-5678",
     domain: "mysite.com",
-    sftp_host: "sftp.mysite.com",
+    sftp_host: "sftp.nalda.com",
     sftp_port: 22,
     sftp_username: "uploader",
     sftp_password: "secret",
@@ -356,7 +522,7 @@ const response = await fetch("/api/v2/nalda/csv-upload", {
 });
 ```
 
-### Step 4: Check Request Status
+### Step 5: Check Request Status
 
 ```typescript
 const statusResponse = await fetch(
