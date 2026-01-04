@@ -2,6 +2,14 @@
 
 This document describes the API endpoints for Nalda CSV upload and SFTP validation.
 
+## Base URL
+
+```
+https://license-manager-jonakyds.vercel.app
+```
+
+All API endpoints are relative to this base URL.
+
 ## Overview
 
 The Nalda API provides:
