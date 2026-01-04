@@ -100,8 +100,12 @@ export function ProductFormDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[550px]">
-        <form onSubmit={handleSubmit} ref={formRef}>
-          <DialogHeader>
+        <form
+          onSubmit={handleSubmit}
+          ref={formRef}
+          className="flex h-full flex-col overflow-hidden"
+        >
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>
               {isEditing ? "Edit Product" : "Create Product"}
             </DialogTitle>
@@ -112,7 +116,7 @@ export function ProductFormDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-6 py-6">
+          <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto py-6">
             {/* Hidden ID field for editing */}
             {isEditing && <input type="hidden" name="id" value={product?.id} />}
 
@@ -209,7 +213,7 @@ export function ProductFormDialog({
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0">
             <Button
               type="button"
               variant="outline"

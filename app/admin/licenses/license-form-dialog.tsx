@@ -85,9 +85,13 @@ export function LicenseFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[550px]">
-        <form onSubmit={handleSubmit} ref={formRef}>
-          <DialogHeader>
+      <DialogContent className="sm:max-w-[550px]">
+        <form
+          onSubmit={handleSubmit}
+          ref={formRef}
+          className="flex h-full flex-col overflow-hidden"
+        >
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>
               {isEditing ? "Edit License" : "Generate License"}
             </DialogTitle>
@@ -98,7 +102,7 @@ export function LicenseFormDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-6 py-6">
+          <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto py-6">
             {/* Hidden ID field for editing */}
             {isEditing && <input type="hidden" name="id" value={license?.id} />}
 
@@ -235,7 +239,7 @@ export function LicenseFormDialog({
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0">
             <Button
               type="button"
               variant="outline"
