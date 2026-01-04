@@ -17,7 +17,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BellIcon, UserIcon, LogOutIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
-import { signOut } from "@/lib/auth-client";
+import { signOut, useSession } from "@/lib/auth-client";
 
 interface AdminHeaderProps {
   className?: string;
@@ -25,6 +25,18 @@ interface AdminHeaderProps {
 
 export function AdminHeader({ className }: AdminHeaderProps) {
   const router = useRouter();
+  const { data: session } = useSession();
+
+  const user = session?.user;
+  const userName = user?.name || "User";
+  const userEmail = user?.email || "";
+  const userImage = user?.image || "";
+  const userInitials = userName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 
   const handleSignOut = async () => {
     try {
@@ -64,9 +76,9 @@ export function AdminHeader({ className }: AdminHeaderProps) {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-9 w-9 rounded-full">
               <Avatar className="h-9 w-9">
-                <AvatarImage src="" alt="User" />
+                <AvatarImage src={userImage} alt={userName} />
                 <AvatarFallback>
-                  <UserIcon className="size-4" />
+                  {userInitials || <UserIcon className="size-4" />}
                 </AvatarFallback>
               </Avatar>
             </Button>
@@ -74,9 +86,9 @@ export function AdminHeader({ className }: AdminHeaderProps) {
           <DropdownMenuContent className="w-56" align="end" forceMount>
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
-                <p className="text-sm leading-none font-medium">Admin</p>
+                <p className="text-sm leading-none font-medium">{userName}</p>
                 <p className="text-muted-foreground text-xs leading-none">
-                  admin@example.com
+                  {userEmail}
                 </p>
               </div>
             </DropdownMenuLabel>
