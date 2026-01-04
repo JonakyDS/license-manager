@@ -2,9 +2,10 @@
  * SFTP Credential Validation API
  *
  * Validates SFTP credentials by attempting a connection to the server.
- * This is a public server-to-server API endpoint.
+ * Requires a valid license key in the X-License-Key header.
  *
  * Security Features:
+ * - License key authentication (required)
  * - Rate limiting (prevents brute force attacks)
  * - Input validation with Zod
  * - Connection timeout (prevents hanging)
@@ -19,6 +20,7 @@ import {
   getClientIdentifier,
   rateLimitExceededResponse,
 } from "@/lib/api/v2/rate-limit";
+import { findLicenseByKey, isLicenseExpired } from "@/lib/api/v2/utils";
 
 // ============================================================================
 // Constants
@@ -326,7 +328,58 @@ export async function POST(
     }
 
     // ========================================================================
-    // 2. Parse and Validate Request Body
+    // 2. License Key Authentication
+    // ========================================================================
+    const licenseKey = request.headers.get("X-License-Key");
+
+    if (!licenseKey) {
+      return errorResponse(
+        "LICENSE_KEY_REQUIRED",
+        "X-License-Key header is required",
+        401
+      );
+    }
+
+    // Validate license key format (XXXX-XXXX-XXXX-XXXX)
+    const licenseKeyRegex =
+      /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i;
+    if (!licenseKeyRegex.test(licenseKey)) {
+      return errorResponse(
+        "INVALID_LICENSE_KEY_FORMAT",
+        "Invalid license key format",
+        401
+      );
+    }
+
+    // Find and validate the license
+    const licenseResult = await findLicenseByKey(licenseKey.toUpperCase());
+
+    if (!licenseResult) {
+      return errorResponse("LICENSE_NOT_FOUND", "Invalid license key", 401);
+    }
+
+    const { license: licenseData, product: productData } = licenseResult;
+
+    // Check if license is revoked
+    if (licenseData.status === "revoked") {
+      return errorResponse("LICENSE_REVOKED", "License has been revoked", 403);
+    }
+
+    // Check if license is expired
+    if (
+      licenseData.status === "expired" ||
+      isLicenseExpired(licenseData.expiresAt)
+    ) {
+      return errorResponse("LICENSE_EXPIRED", "License has expired", 403);
+    }
+
+    // Check if product is active
+    if (!productData.active) {
+      return errorResponse("PRODUCT_INACTIVE", "Product is not active", 403);
+    }
+
+    // ========================================================================
+    // 3. Parse and Validate Request Body
     // ========================================================================
     let body: unknown;
     try {
