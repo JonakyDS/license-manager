@@ -5,9 +5,8 @@
  * Free tier supports 10,000 commands/day which is plenty for license validation.
  *
  * Setup:
- * 1. Create a free account at https://upstash.com
- * 2. Create a Redis database
- * 3. Copy UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to .env
+ * 1. Add Upstash Redis integration in Vercel (automatically adds KV_REST_API_URL and KV_REST_API_TOKEN)
+ * 2. Or create manually at https://console.upstash.com and add env vars
  */
 
 import { Ratelimit } from "@upstash/ratelimit";
@@ -24,9 +23,7 @@ import type { ApiErrorResponse } from "./types";
  * Rate limiting will be skipped if not configured (development mode).
  */
 function isRateLimitConfigured(): boolean {
-  return !!(
-    process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-  );
+  return !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
 }
 
 /**
@@ -38,8 +35,8 @@ function getRedis(): Redis | null {
 
   if (!redis) {
     redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL!,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+      url: process.env.KV_REST_API_URL!,
+      token: process.env.KV_REST_API_TOKEN!,
     });
   }
   return redis;
