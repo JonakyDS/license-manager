@@ -24,15 +24,15 @@ import {
   maskEmail,
   logApiRequest,
   logApiError,
-} from "@/lib/api/utils";
-import { activateRequestSchema } from "@/lib/api/validation";
+} from "@/lib/api/v2/utils";
+import { activateRequestSchema } from "@/lib/api/v2/validation";
 import {
   checkRateLimit,
   getClientIdentifier,
   rateLimitExceededResponse,
   addRateLimitHeaders,
-} from "@/lib/api/rate-limit";
-import type { ActivateResponseData } from "@/lib/api/types";
+} from "@/lib/api/v2/rate-limit";
+import type { ActivateResponseData } from "@/lib/api/v2/types";
 
 export async function POST(request: NextRequest) {
   const endpoint = "/api/v2/licenses/activate";

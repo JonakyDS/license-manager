@@ -29,14 +29,14 @@ import {
   maskEmail,
   logApiRequest,
   logApiError,
-} from "@/lib/api/utils";
-import { statusRequestSchema } from "@/lib/api/validation";
+} from "@/lib/api/v2/utils";
+import { statusRequestSchema } from "@/lib/api/v2/validation";
 import {
   checkRateLimit,
   getClientIdentifier,
   rateLimitExceededResponse,
-} from "@/lib/api/rate-limit";
-import type { StatusResponseData } from "@/lib/api/types";
+} from "@/lib/api/v2/rate-limit";
+import type { StatusResponseData } from "@/lib/api/v2/types";
 
 export async function POST(request: NextRequest) {
   const endpoint = "/api/v2/licenses/status";

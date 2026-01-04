@@ -24,14 +24,14 @@ import {
   getActiveActivation,
   logApiRequest,
   logApiError,
-} from "@/lib/api/utils";
-import { deactivateRequestSchema } from "@/lib/api/validation";
+} from "@/lib/api/v2/utils";
+import { deactivateRequestSchema } from "@/lib/api/v2/validation";
 import {
   checkRateLimit,
   getClientIdentifier,
   rateLimitExceededResponse,
-} from "@/lib/api/rate-limit";
-import type { DeactivateResponseData } from "@/lib/api/types";
+} from "@/lib/api/v2/rate-limit";
+import type { DeactivateResponseData } from "@/lib/api/v2/types";
 
 export async function POST(request: NextRequest) {
   const endpoint = "/api/v2/licenses/deactivate";
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Refetch license data for expired case
-    const { findLicenseByKeyAndProduct } = await import("@/lib/api/utils");
+    const { findLicenseByKeyAndProduct } = await import("@/lib/api/v2/utils");
     const licenseResult = await findLicenseByKeyAndProduct(
       license_key,
       product_slug

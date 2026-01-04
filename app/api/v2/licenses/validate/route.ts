@@ -26,15 +26,15 @@ import {
   markLicenseAsExpired,
   logApiRequest,
   logApiError,
-} from "@/lib/api/utils";
-import { validateRequestSchema } from "@/lib/api/validation";
+} from "@/lib/api/v2/utils";
+import { validateRequestSchema } from "@/lib/api/v2/validation";
 import {
   checkRateLimit,
   getClientIdentifier,
   rateLimitExceededResponse,
   recordFailedAttempt,
-} from "@/lib/api/rate-limit";
-import type { ValidateResponseData } from "@/lib/api/types";
+} from "@/lib/api/v2/rate-limit";
+import type { ValidateResponseData } from "@/lib/api/v2/types";
 
 export async function POST(request: NextRequest) {
   const endpoint = "/api/v2/licenses/validate";
