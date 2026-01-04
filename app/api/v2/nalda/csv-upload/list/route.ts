@@ -21,7 +21,7 @@
 
 import { NextRequest } from "next/server";
 import { db } from "@/db/drizzle";
-import { license, naldaCsvUploadRequest } from "@/db/schema";
+import { naldaCsvUploadRequest } from "@/db/schema";
 import { eq, and, desc, count, SQL } from "drizzle-orm";
 import {
   successResponse,
@@ -29,6 +29,7 @@ import {
   logApiRequest,
   logApiError,
   validationErrorResponse,
+  validateLicenseAndDomainForNalda,
 } from "@/lib/api/v2/utils";
 import { listNaldaCsvUploadRequestsSchema } from "@/lib/api/v2/validation";
 import {
@@ -41,54 +42,6 @@ import type {
   NaldaCsvUploadRequestListItem,
   NaldaCsvUploadRequestListResponseData,
 } from "@/lib/api/v2/types";
-
-/**
- * Validates license key and domain, returns license ID if valid.
- */
-async function validateLicenseAndDomain(
-  licenseKey: string,
-  domain: string
-): Promise<
-  | { valid: true; licenseId: string }
-  | { valid: false; error: string; code: string }
-> {
-  // Find the license by key
-  const licenseRecord = await db.query.license.findFirst({
-    where: eq(license.licenseKey, licenseKey),
-    with: {
-      activations: true,
-    },
-  });
-
-  if (!licenseRecord) {
-    return {
-      valid: false,
-      error: "Invalid license key",
-      code: "LICENSE_NOT_FOUND",
-    };
-  }
-
-  // Check if license is active (we allow viewing requests even for expired/revoked licenses)
-  // This is intentional - users should be able to see their request history
-
-  // Find activation for this domain (can be active or inactive)
-  const activation = licenseRecord.activations.find(
-    (a) => a.domain.toLowerCase() === domain.toLowerCase()
-  );
-
-  if (!activation) {
-    return {
-      valid: false,
-      error: "Domain was never activated for this license",
-      code: "DOMAIN_MISMATCH",
-    };
-  }
-
-  return {
-    valid: true,
-    licenseId: licenseRecord.id,
-  };
-}
 
 export async function GET(request: NextRequest) {
   const endpoint = "/api/v2/nalda/csv-upload/list";
@@ -130,10 +83,12 @@ export async function GET(request: NextRequest) {
       status,
     });
 
-    // Validate license and domain
-    const licenseValidation = await validateLicenseAndDomain(
+    // Validate license and domain using shared utility
+    // Allow viewing history even for expired/revoked licenses
+    const licenseValidation = await validateLicenseAndDomainForNalda(
       license_key,
-      domain
+      domain,
+      { requireActiveActivation: false, updateExpiredStatus: false }
     );
 
     if (!licenseValidation.valid) {

@@ -357,7 +357,19 @@ export function generateId(): string {
 // ============================================================================
 
 /**
+ * Masks a license key for logging.
+ * Example: "ABCD-1234-EFGH-5678" -> "ABCD-****-****-5678"
+ */
+export function maskLicenseKey(key: string): string {
+  if (!key || key.length < 19) return "****-****-****-****";
+  const parts = key.split("-");
+  if (parts.length !== 4) return "****-****-****-****";
+  return `${parts[0]}-****-****-${parts[3]}`;
+}
+
+/**
  * Logs API request details (can be extended for production logging).
+ * Automatically masks sensitive data like license keys.
  */
 export function logApiRequest(
   endpoint: string,
@@ -365,7 +377,15 @@ export function logApiRequest(
   params: Record<string, unknown>
 ): void {
   if (process.env.NODE_ENV === "development") {
-    console.log(`[API] ${method} ${endpoint}`, JSON.stringify(params, null, 2));
+    // Mask sensitive fields
+    const safeParams = { ...params };
+    if (typeof safeParams.license_key === "string") {
+      safeParams.license_key = maskLicenseKey(safeParams.license_key);
+    }
+    console.log(
+      `[API] ${method} ${endpoint}`,
+      JSON.stringify(safeParams, null, 2)
+    );
   }
 }
 
@@ -382,4 +402,118 @@ export function logApiError(
     stack: error instanceof Error ? error.stack : undefined,
     context,
   });
+}
+
+// ============================================================================
+// Nalda License + Domain Validation
+// ============================================================================
+
+export interface LicenseAndDomainValidationResult {
+  valid: true;
+  licenseId: string;
+}
+
+export interface LicenseAndDomainValidationError {
+  valid: false;
+  error: string;
+  code: ErrorCode;
+}
+
+export type LicenseAndDomainValidation =
+  | LicenseAndDomainValidationResult
+  | LicenseAndDomainValidationError;
+
+/**
+ * Validates license key and domain combination for Nalda APIs.
+ * Use this for endpoints that require both license key and domain validation.
+ *
+ * @param licenseKey - The license key (will be normalized)
+ * @param domain - The domain (will be normalized)
+ * @param options - Configuration options
+ * @param options.requireActiveActivation - If true, requires an active activation (default: true)
+ * @param options.updateExpiredStatus - If true, updates DB when license is found expired (default: false)
+ */
+export async function validateLicenseAndDomainForNalda(
+  licenseKey: string,
+  domain: string,
+  options: {
+    requireActiveActivation?: boolean;
+    updateExpiredStatus?: boolean;
+  } = {}
+): Promise<LicenseAndDomainValidation> {
+  const { requireActiveActivation = true, updateExpiredStatus = false } =
+    options;
+
+  // Find the license by key
+  const licenseRecord = await db.query.license.findFirst({
+    where: eq(license.licenseKey, licenseKey),
+    with: {
+      activations: true,
+    },
+  });
+
+  if (!licenseRecord) {
+    return {
+      valid: false,
+      error: "Invalid license key",
+      code: "LICENSE_NOT_FOUND",
+    };
+  }
+
+  // Check if license is revoked
+  if (licenseRecord.status === "revoked") {
+    return {
+      valid: false,
+      error: "License has been revoked",
+      code: "LICENSE_REVOKED",
+    };
+  }
+
+  // Check if license is already marked expired
+  if (licenseRecord.status === "expired") {
+    return {
+      valid: false,
+      error: "License has expired",
+      code: "LICENSE_EXPIRED",
+    };
+  }
+
+  // Check if license is expired by date
+  if (licenseRecord.expiresAt && new Date() > licenseRecord.expiresAt) {
+    // Optionally update status to expired in DB
+    if (updateExpiredStatus) {
+      await db
+        .update(license)
+        .set({ status: "expired" })
+        .where(eq(license.id, licenseRecord.id));
+    }
+
+    return {
+      valid: false,
+      error: "License has expired",
+      code: "LICENSE_EXPIRED",
+    };
+  }
+
+  // Find activation for this domain
+  const normalizedDomain = domain.toLowerCase();
+  const activation = licenseRecord.activations.find((a) => {
+    const matches = a.domain.toLowerCase() === normalizedDomain;
+    return requireActiveActivation ? matches && a.isActive : matches;
+  });
+
+  if (!activation) {
+    return {
+      valid: false,
+      error: requireActiveActivation
+        ? "License is not activated on the specified domain"
+        : "Domain was never activated for this license",
+      code: "DOMAIN_MISMATCH",
+    };
+  }
+
+  return {
+    valid: true,
+    licenseId: licenseRecord.id,
+  };
 }

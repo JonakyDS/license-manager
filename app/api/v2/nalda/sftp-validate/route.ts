@@ -18,14 +18,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import SftpClient from "ssh2-sftp-client";
-import { db } from "@/db/drizzle";
-import { license } from "@/db/schema";
-import { eq } from "drizzle-orm";
 import {
   checkRateLimit,
   getClientIdentifier,
   rateLimitExceededResponse,
+  addRateLimitHeaders,
 } from "@/lib/api/v2/rate-limit";
+import {
+  validateLicenseAndDomainForNalda,
+  logApiRequest,
+  logApiError,
+  maskLicenseKey,
+} from "@/lib/api/v2/utils";
+import type {
+  ApiSuccessResponse,
+  ApiErrorResponse,
+  ErrorCode,
+} from "@/lib/api/v2/types";
+import { domainSchema, licenseKeySchema } from "@/lib/api/v2/validation";
 
 // ============================================================================
 // Constants
@@ -39,43 +49,6 @@ const MAX_PASSWORD_LENGTH = 256;
 // ============================================================================
 // Validation Schema
 // ============================================================================
-
-/**
- * Validates and normalizes a domain string.
- */
-const domainSchema = z
-  .string()
-  .min(1, "Domain is required")
-  .transform((val) => {
-    let domain = val.toLowerCase().trim();
-    domain = domain.replace(/^https?:\/\//, "");
-    domain = domain.replace(/\/$/, "");
-    domain = domain.split("/")[0];
-    return domain;
-  })
-  .refine(
-    (val) => {
-      const domainRegex =
-        /^(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?::\d{1,5})?$/;
-      return domainRegex.test(val);
-    },
-    { message: "Invalid domain format" }
-  );
-
-/**
- * Validates a license key format (XXXX-XXXX-XXXX-XXXX).
- */
-const licenseKeySchema = z
-  .string()
-  .min(1, "License key is required")
-  .transform((val) => val.toUpperCase().trim())
-  .refine(
-    (val) => {
-      const keyRegex = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
-      return keyRegex.test(val);
-    },
-    { message: "Invalid license key format. Expected: XXXX-XXXX-XXXX-XXXX" }
-  );
 
 const sftpValidateRequestSchema = z.object({
   license_key: licenseKeySchema,
@@ -125,26 +98,9 @@ const sftpValidateRequestSchema = z.object({
     ),
 });
 
-type SftpValidateRequest = z.infer<typeof sftpValidateRequestSchema>;
-
 // ============================================================================
 // Types
 // ============================================================================
-
-interface ApiSuccessResponse<T> {
-  success: true;
-  data: T;
-  message: string;
-}
-
-interface ApiErrorResponse {
-  success: false;
-  error: {
-    code: string;
-    message: string;
-    details?: Record<string, string[]>;
-  };
-}
 
 interface SftpValidationResult {
   hostname: string;
@@ -161,7 +117,7 @@ interface SftpValidationResult {
 // ============================================================================
 
 interface MappedError {
-  code: string;
+  code: ErrorCode;
   message: string;
   status: number;
 }
@@ -286,7 +242,7 @@ function successResponse<T>(
 }
 
 function errorResponse(
-  code: string,
+  code: ErrorCode,
   message: string,
   status: number = 400,
   details?: Record<string, string[]>
@@ -359,78 +315,6 @@ async function validateSftpConnection(
 }
 
 // ============================================================================
-// License and Domain Validation Helper
-// ============================================================================
-
-async function validateLicenseAndDomain(
-  licenseKey: string,
-  domain: string
-): Promise<
-  | { valid: true; licenseId: string }
-  | { valid: false; error: string; code: string }
-> {
-  // Find the license by key
-  const licenseRecord = await db.query.license.findFirst({
-    where: eq(license.licenseKey, licenseKey),
-    with: {
-      activations: true,
-    },
-  });
-
-  if (!licenseRecord) {
-    return {
-      valid: false,
-      error: "Invalid license key",
-      code: "LICENSE_NOT_FOUND",
-    };
-  }
-
-  // Check if license is active
-  if (licenseRecord.status === "revoked") {
-    return {
-      valid: false,
-      error: "License has been revoked",
-      code: "LICENSE_REVOKED",
-    };
-  }
-
-  if (licenseRecord.status === "expired") {
-    return {
-      valid: false,
-      error: "License has expired",
-      code: "LICENSE_EXPIRED",
-    };
-  }
-
-  // Check if license is expired by date
-  if (licenseRecord.expiresAt && new Date() > licenseRecord.expiresAt) {
-    return {
-      valid: false,
-      error: "License has expired",
-      code: "LICENSE_EXPIRED",
-    };
-  }
-
-  // Find active activation for this domain
-  const activation = licenseRecord.activations.find(
-    (a) => a.isActive && a.domain.toLowerCase() === domain.toLowerCase()
-  );
-
-  if (!activation) {
-    return {
-      valid: false,
-      error: "License is not activated on the specified domain",
-      code: "DOMAIN_MISMATCH",
-    };
-  }
-
-  return {
-    valid: true,
-    licenseId: licenseRecord.id,
-  };
-}
-
-// ============================================================================
 // API Route Handler
 // ============================================================================
 
@@ -439,6 +323,8 @@ export async function POST(
 ): Promise<
   NextResponse<ApiSuccessResponse<SftpValidationResult> | ApiErrorResponse>
 > {
+  const startTime = Date.now();
+
   try {
     // ========================================================================
     // 1. Rate Limiting
@@ -487,12 +373,22 @@ export async function POST(
     const { license_key, domain, hostname, port, username, password } =
       validationResult.data;
 
+    // Log the request (with masked sensitive data)
+    logApiRequest("SFTP Validate", "POST", {
+      domain,
+      hostname,
+      port,
+      username,
+      license_key: maskLicenseKey(license_key),
+    });
+
     // ========================================================================
     // 3. Validate License and Domain
     // ========================================================================
-    const licenseValidation = await validateLicenseAndDomain(
+    const licenseValidation = await validateLicenseAndDomainForNalda(
       license_key,
-      domain
+      domain,
+      { requireActiveActivation: true, updateExpiredStatus: true }
     );
 
     if (!licenseValidation.valid) {
@@ -516,15 +412,12 @@ export async function POST(
     if (!connectionResult.success) {
       const mappedError = mapSftpError(connectionResult.error);
 
-      // Log error for debugging (in production, use proper logging service)
-      if (process.env.NODE_ENV === "development") {
-        console.error("[SFTP Validation Error]", {
-          hostname,
-          port,
-          username,
-          error: connectionResult.error.message,
-        });
-      }
+      logApiError("SFTP Validate", connectionResult.error, {
+        hostname,
+        port,
+        username,
+        domain,
+      });
 
       return errorResponse(
         mappedError.code,
@@ -536,7 +429,15 @@ export async function POST(
     // ========================================================================
     // 5. Return Success Response
     // ========================================================================
-    return successResponse<SftpValidationResult>(
+    const duration = Date.now() - startTime;
+
+    logApiRequest("SFTP Validate Success", "POST", {
+      domain,
+      hostname,
+      duration: `${duration}ms`,
+    });
+
+    const response = successResponse<SftpValidationResult>(
       {
         hostname,
         port,
@@ -548,9 +449,21 @@ export async function POST(
       },
       "SFTP credentials are valid"
     );
+
+    // Add rate limit headers to response
+    if (rateLimitResult) {
+      return addRateLimitHeaders(response, rateLimitResult) as NextResponse<
+        ApiSuccessResponse<SftpValidationResult>
+      >;
+    }
+
+    return response;
   } catch (error) {
-    // Log unexpected errors
-    console.error("[SFTP API Unexpected Error]", error);
+    logApiError(
+      "SFTP Validate",
+      error instanceof Error ? error : new Error("Unknown error"),
+      { endpoint: "sftp-validate" }
+    );
 
     return errorResponse(
       "INTERNAL_ERROR",

@@ -11,66 +11,31 @@
 
 import { createUploadthing, type FileRouter } from "uploadthing/next";
 import { UploadThingError } from "uploadthing/server";
-import { db } from "@/db/drizzle";
-import { license } from "@/db/schema";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { validateLicenseAndDomainForNalda } from "@/lib/api/v2/utils";
 
 const f = createUploadthing();
 
 /**
- * Validates license key and domain combination.
- * Returns the license ID if valid, throws error otherwise.
+ * Validates license key and domain combination for UploadThing.
+ * Returns the license ID if valid, throws UploadThingError otherwise.
+ *
+ * Uses the shared validation function but converts results to UploadThing errors.
  */
-async function validateLicenseAndDomain(
+async function validateForUpload(
   licenseKey: string,
   domain: string
 ): Promise<string> {
-  // Normalize inputs
-  const normalizedKey = licenseKey.toUpperCase().trim();
-  const normalizedDomain = domain
-    .toLowerCase()
-    .trim()
-    .replace(/^https?:\/\//, "")
-    .replace(/\/$/, "")
-    .split("/")[0];
-
-  // Find the license by key
-  const licenseRecord = await db.query.license.findFirst({
-    where: eq(license.licenseKey, normalizedKey),
-    with: {
-      activations: true,
-    },
+  const result = await validateLicenseAndDomainForNalda(licenseKey, domain, {
+    requireActiveActivation: true,
+    updateExpiredStatus: true,
   });
 
-  if (!licenseRecord) {
-    throw new UploadThingError("Invalid license key");
+  if (!result.valid) {
+    throw new UploadThingError(result.error);
   }
 
-  // Check if license is active
-  if (licenseRecord.status !== "active") {
-    throw new UploadThingError(
-      `License is ${licenseRecord.status}. Only active licenses can upload files.`
-    );
-  }
-
-  // Check if license is expired
-  if (licenseRecord.expiresAt && new Date() > licenseRecord.expiresAt) {
-    throw new UploadThingError("License has expired");
-  }
-
-  // Find active activation for this domain
-  const activation = licenseRecord.activations.find(
-    (a) => a.isActive && a.domain.toLowerCase() === normalizedDomain
-  );
-
-  if (!activation) {
-    throw new UploadThingError(
-      "License is not activated on the specified domain"
-    );
-  }
-
-  return licenseRecord.id;
+  return result.licenseId;
 }
 
 /**
@@ -119,7 +84,7 @@ export const ourFileRouter = {
     .middleware(async ({ input }) => {
       // Validate license and domain BEFORE generating presigned URLs
       // This ensures only valid license holders can upload
-      const licenseId = await validateLicenseAndDomain(
+      const licenseId = await validateForUpload(
         input.license_key,
         input.domain
       );

@@ -30,6 +30,7 @@ export type ApiResponse<T = unknown> = ApiSuccessResponse<T> | ApiErrorResponse;
 // ============================================================================
 
 export type ErrorCode =
+  // License errors
   | "VALIDATION_ERROR"
   | "LICENSE_NOT_FOUND"
   | "LICENSE_EXPIRED"
@@ -42,11 +43,28 @@ export type ErrorCode =
   | "ALREADY_ACTIVATED"
   | "NOT_ACTIVATED"
   | "ACTIVATION_NOT_FOUND"
+  | "ACTIVATION_EXPIRED"
+  // Rate limiting
   | "RATE_LIMIT_EXCEEDED"
+  // HTTP standard errors
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "NOT_FOUND"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  | "INVALID_JSON"
+  // SFTP errors
+  | "AUTH_FAILED"
+  | "HOST_NOT_FOUND"
+  | "CONNECTION_REFUSED"
+  | "CONNECTION_TIMEOUT"
+  | "HOST_UNREACHABLE"
+  | "NETWORK_UNREACHABLE"
+  | "CONNECTION_RESET"
+  | "PROTOCOL_ERROR"
+  | "CONNECTION_ERROR"
+  // Nalda errors
+  | "UPLOAD_REQUEST_NOT_FOUND"
+  | "UPLOAD_REQUEST_ALREADY_COMPLETED";
 
 // ============================================================================
 // Request Types

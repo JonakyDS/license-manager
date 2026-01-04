@@ -14,7 +14,7 @@ import { z } from "zod";
  * Validates and normalizes a domain string.
  * Accepts domains with or without protocol, strips protocol if present.
  */
-const domainSchema = z
+export const domainSchema = z
   .string()
   .min(1, "Domain is required")
   .transform((val) => {
@@ -41,7 +41,7 @@ const domainSchema = z
 /**
  * Validates a license key format (XXXX-XXXX-XXXX-XXXX).
  */
-const licenseKeySchema = z
+export const licenseKeySchema = z
   .string()
   .min(1, "License key is required")
   .transform((val) => val.toUpperCase().trim())
@@ -103,18 +103,38 @@ export const statusRequestSchema = z.object({
 // Nalda CSV Upload Request Schemas
 // ============================================================================
 
+/**
+ * Validates SFTP hostname - must be a subdomain of nalda.com
+ */
+const naldaSftpHostSchema = z
+  .string()
+  .min(1, "SFTP host is required")
+  .max(255, "SFTP host must be less than 255 characters")
+  .refine(
+    (val) => {
+      // Only allow subdomains of nalda.com (e.g., sftp.nalda.com, server1.nalda.com)
+      const naldaSubdomainRegex =
+        /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.nalda\.com$/i;
+      return naldaSubdomainRegex.test(val);
+    },
+    {
+      message:
+        "SFTP host must be a subdomain of nalda.com (e.g., sftp.nalda.com)",
+    }
+  );
+
 export const naldaCsvUploadRequestSchema = z.object({
   license_key: licenseKeySchema,
   domain: domainSchema,
-  sftp_host: z
-    .string()
-    .min(1, "SFTP host is required")
-    .max(255, "SFTP host must be less than 255 characters"),
+  sftp_host: naldaSftpHostSchema,
   sftp_port: z.number().int().min(1).max(65535).default(22),
   sftp_username: z
     .string()
     .min(1, "SFTP username is required")
-    .max(255, "SFTP username must be less than 255 characters"),
+    .max(255, "SFTP username must be less than 255 characters")
+    .refine((val) => !/[\x00-\x1f\x7f]/.test(val), {
+      message: "SFTP username contains invalid characters",
+    }),
   sftp_password: z
     .string()
     .min(1, "SFTP password is required")

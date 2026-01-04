@@ -17,14 +17,14 @@
 import { NextRequest } from "next/server";
 import { nanoid } from "nanoid";
 import { db } from "@/db/drizzle";
-import { license, naldaCsvUploadRequest } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { naldaCsvUploadRequest } from "@/db/schema";
 import {
   successResponse,
   errorResponse,
   parseRequestBody,
   logApiRequest,
   logApiError,
+  validateLicenseAndDomainForNalda,
 } from "@/lib/api/v2/utils";
 import { naldaCsvUploadRequestSchema } from "@/lib/api/v2/validation";
 import {
@@ -34,83 +34,6 @@ import {
   addRateLimitHeaders,
 } from "@/lib/api/v2/rate-limit";
 import type { NaldaCsvUploadRequestResponseData } from "@/lib/api/v2/types";
-
-/**
- * Validates license key and domain, returns license ID if valid.
- */
-async function validateLicenseAndDomain(
-  licenseKey: string,
-  domain: string
-): Promise<
-  | { valid: true; licenseId: string }
-  | { valid: false; error: string; code: string }
-> {
-  // Find the license by key
-  const licenseRecord = await db.query.license.findFirst({
-    where: eq(license.licenseKey, licenseKey),
-    with: {
-      activations: true,
-    },
-  });
-
-  if (!licenseRecord) {
-    return {
-      valid: false,
-      error: "Invalid license key",
-      code: "LICENSE_NOT_FOUND",
-    };
-  }
-
-  // Check if license is active
-  if (licenseRecord.status === "revoked") {
-    return {
-      valid: false,
-      error: "License has been revoked",
-      code: "LICENSE_REVOKED",
-    };
-  }
-
-  if (licenseRecord.status === "expired") {
-    return {
-      valid: false,
-      error: "License has expired",
-      code: "LICENSE_EXPIRED",
-    };
-  }
-
-  // Check if license is expired by date
-  if (licenseRecord.expiresAt && new Date() > licenseRecord.expiresAt) {
-    // Update status to expired
-    await db
-      .update(license)
-      .set({ status: "expired" })
-      .where(eq(license.id, licenseRecord.id));
-
-    return {
-      valid: false,
-      error: "License has expired",
-      code: "LICENSE_EXPIRED",
-    };
-  }
-
-  // Find active activation for this domain
-  const activation = licenseRecord.activations.find(
-    (a) => a.isActive && a.domain.toLowerCase() === domain.toLowerCase()
-  );
-
-  if (!activation) {
-    return {
-      valid: false,
-      error: "License is not activated on the specified domain",
-      code: "DOMAIN_MISMATCH",
-    };
-  }
-
-  return {
-    valid: true,
-    licenseId: licenseRecord.id,
-  };
-}
 
 export async function POST(request: NextRequest) {
   const endpoint = "/api/v2/nalda/csv-upload";
@@ -152,10 +75,11 @@ export async function POST(request: NextRequest) {
       csv_file_key,
     });
 
-    // Validate license and domain
-    const validationResult = await validateLicenseAndDomain(
+    // Validate license and domain using shared utility
+    const validationResult = await validateLicenseAndDomainForNalda(
       license_key,
-      domain
+      domain,
+      { requireActiveActivation: true, updateExpiredStatus: true }
     );
 
     if (!validationResult.valid) {
@@ -177,7 +101,7 @@ export async function POST(request: NextRequest) {
       sftpHost: sftp_host,
       sftpPort: sftp_port,
       sftpUsername: sftp_username,
-      sftpPassword: sftp_password, // In production, consider encrypting this
+      sftpPassword: sftp_password, // TODO: Encrypt in production
       csvFileKey: csv_file_key,
       status: "pending",
       createdAt: now,
