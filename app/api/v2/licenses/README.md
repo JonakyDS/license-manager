@@ -4,7 +4,7 @@
 
 The License API v2 provides endpoints for managing software license activations. It's designed for **server-to-server communication** — plugin/theme backends should call these endpoints, NOT browser clients.
 
-**Base URL:** `https://licence-manager-one.vercel.app/api/v2/licenses`
+**Base URL:** `https://license-manager-one.vercel.app/api/v2/licenses`
 
 **Version:** 2.0
 
@@ -352,7 +352,7 @@ Returns complete information about a license.
 ```php
 <?php
 class LicenseManager {
-    private $api_url = 'https://licence-manager-one.vercel.app/api/v2/licenses';
+    private $api_url = 'https://license-manager-one.vercel.app/api/v2/licenses';
     private $product_slug = 'my-awesome-plugin';
     
     public function activate($license_key) {
@@ -456,7 +456,7 @@ class LicenseClient {
 
 // Usage
 const client = new LicenseClient(
-  'https://licence-manager-one.vercel.app/api/v2/licenses',
+  'https://license-manager-one.vercel.app/api/v2/licenses',
   'my-awesome-plugin'
 );
 ```
