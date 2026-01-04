@@ -15,3 +15,12 @@ export const authClient = createAuthClient({
 });
 
 export const { signIn, signUp, signOut, useSession } = authClient;
+
+// Type helper for session with role
+export type SessionUser = {
+  id: string;
+  name: string;
+  email: string;
+  image?: string | null;
+  role: "user" | "admin";
+};

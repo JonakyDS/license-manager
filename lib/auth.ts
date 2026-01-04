@@ -21,4 +21,13 @@ export const auth = betterAuth({
       verification: schema.verification,
     },
   }),
+  user: {
+    additionalFields: {
+      role: {
+        type: "string",
+        defaultValue: "user",
+        input: false, // Don't allow setting role during registration
+      },
+    },
+  },
 });

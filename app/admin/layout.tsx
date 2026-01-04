@@ -1,11 +1,28 @@
+import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { AdminHeader } from "@/components/admin/admin-header";
 
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  // Redirect to sign-in if not authenticated
+  if (!session) {
+    redirect("/sign-in");
+  }
+
+  // Redirect to dashboard if not an admin
+  if (session.user.role !== "admin") {
+    redirect("/dashboard");
+  }
+
   return (
     <div className="bg-muted/30 fixed inset-0 flex overflow-hidden">
       {/* Sidebar */}
