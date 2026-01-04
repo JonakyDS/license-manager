@@ -1,159 +1,94 @@
-# License API v2 Documentation
+# License API - Plugin Integration Guide
 
-## Overview
+A complete guide for integrating license validation into your WordPress plugins and themes.
 
-The License API v2 provides endpoints for managing software license activations. It's designed for **server-to-server communication** — plugin/theme backends should call these endpoints, NOT browser clients.
+## Quick Start
 
 **Base URL:** `https://license-manager-jonakyds.vercel.app/api/v2/licenses`
 
-**Version:** 2.0
+```php
+// 1. Activate license when user enters key
+$result = $this->activate_license('XXXX-XXXX-XXXX-XXXX');
 
-## Important: Server-to-Server Only
+// 2. Validate periodically (daily cron)
+$is_valid = $this->validate_license('XXXX-XXXX-XXXX-XXXX');
 
-This API is intended to be called from your plugin or theme's backend server, not directly from browsers. The API:
-- Sets `X-API-Type: server-to-server` header
-- Does not support CORS for browser requests
-- Masks sensitive data (like customer emails) for privacy
-- Should be called from PHP, Node.js, or other server-side code
-
-## Authentication
-
-Currently, these endpoints are public and rely on the secrecy of license keys. For production use, consider adding:
-- API key authentication
-- IP whitelisting
-
-## Rate Limiting
-
-Rate limiting is implemented using **Upstash Redis** (free tier: 10,000 commands/day).
-
-### Limits
-
-| Endpoint | Limit | Window |
-|----------|-------|--------|
-| `/activate` | 60 requests | per hour per IP |
-| `/validate` | 60 requests | per hour per IP |
-| `/deactivate` | 60 requests | per hour per IP |
-| `/status` | 60 requests | per hour per IP |
-| Failed attempts | 60 attempts | per hour per license key |
-
-### Rate Limit Response
-
-When rate limited, the API returns:
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "RATE_LIMIT_EXCEEDED",
-    "message": "Too many requests. Please try again in 45 seconds."
-  }
-}
+// 3. Show status in settings page
+$status = $this->get_license_status('XXXX-XXXX-XXXX-XXXX');
 ```
-
-**HTTP Status:** `429 Too Many Requests`
-
-**Headers:**
-- `Retry-After`: Seconds until the limit resets
-- `X-RateLimit-Limit`: Maximum requests allowed
-- `X-RateLimit-Remaining`: Requests remaining
-- `X-RateLimit-Reset`: Unix timestamp when the limit resets
-
-### Setup
-
-1. Create a free account at [upstash.com](https://upstash.com)
-2. Create a Redis database
-3. Add to your `.env`:
-   ```
-   UPSTASH_REDIS_REST_URL=https://your-redis.upstash.io
-   UPSTASH_REDIS_REST_TOKEN=your-token
-   ```
-
-> **Note:** Rate limiting is automatically disabled if Upstash is not configured (useful for development).
-
-## Common Response Format
-
-All endpoints return responses in a consistent format:
-
-### Success Response
-
-```json
-{
-  "success": true,
-  "data": { ... },
-  "message": "Optional success message"
-}
-```
-
-### Error Response
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Human-readable error message",
-    "details": {
-      "field_name": ["Error message 1", "Error message 2"]
-    }
-  }
-}
-```
-
-## Error Codes
-
-| Code | Description |
-|------|-------------|
-| `VALIDATION_ERROR` | Invalid request parameters |
-| `LICENSE_NOT_FOUND` | License key doesn't exist |
-| `LICENSE_EXPIRED` | License has passed its expiration date |
-| `LICENSE_REVOKED` | License has been manually revoked |
-| `LICENSE_INACTIVE` | License is not active |
-| `PRODUCT_NOT_FOUND` | Product doesn't match the license |
-| `PRODUCT_INACTIVE` | Product has been deactivated |
-| `DOMAIN_MISMATCH` | License is activated on a different domain |
-| `DOMAIN_CHANGE_LIMIT_EXCEEDED` | No more domain changes allowed |
-| `ALREADY_ACTIVATED` | License is already activated |
-| `NOT_ACTIVATED` | License hasn't been activated yet |
-| `ACTIVATION_NOT_FOUND` | No activation record found |
-| `RATE_LIMIT_EXCEEDED` | Too many requests, try again later |
-| `INTERNAL_ERROR` | Unexpected server error |
 
 ---
 
-## Endpoints
+## Table of Contents
+
+- [Overview](#overview)
+- [API Endpoints](#api-endpoints)
+  - [Activate License](#1-activate-license)
+  - [Validate License](#2-validate-license)
+  - [Deactivate License](#3-deactivate-license)
+  - [Get Status](#4-license-status)
+- [Complete PHP Class](#complete-php-class-for-wordpress)
+- [Implementation Examples](#implementation-examples)
+- [Error Handling](#error-handling)
+- [Best Practices](#best-practices)
+
+---
+
+## Overview
+
+This API manages software license activations for your plugins/themes. It's designed for **server-to-server communication** — your plugin's PHP code calls these endpoints, NOT the browser.
+
+### Key Features
+
+- ✅ Domain-locked licenses (one domain per license)
+- ✅ Automatic expiration handling
+- ✅ Domain change support (configurable limit)
+- ✅ Rate limiting protection
+- ✅ Privacy-first (emails are masked)
+
+### How It Works
+
+1. **User purchases** → You create a license in the admin panel
+2. **User enters key** → Plugin calls `/activate` endpoint
+3. **Daily validation** → Plugin calls `/validate` to check if still valid
+4. **User moves site** → Plugin calls `/deactivate`, then `/activate` on new domain
+
+---
+
+## API Endpoints
 
 ### 1. Activate License
 
-Activates a license key on a specific domain.
+Activates a license key on the current domain. Call this when the user enters their license key.
 
 **Endpoint:** `POST /api/v2/licenses/activate`
 
-**Request Body:**
+**Request:**
 
 ```json
 {
   "license_key": "XXXX-XXXX-XXXX-XXXX",
-  "product_slug": "my-awesome-plugin",
-  "domain": "example.com"
+  "product_slug": "your-plugin-slug",
+  "domain": "customer-site.com"
 }
 ```
 
-**Success Response (200):**
+**Success Response:**
 
 ```json
 {
   "success": true,
   "data": {
     "license_key": "XXXX-XXXX-XXXX-XXXX",
-    "domain": "example.com",
-    "activated_at": "2024-01-15T10:30:00.000Z",
-    "expires_at": "2025-01-15T10:30:00.000Z",
+    "domain": "customer-site.com",
+    "activated_at": "2026-01-04T10:30:00.000Z",
+    "expires_at": "2027-01-04T10:30:00.000Z",
     "days_remaining": 365,
     "is_new_activation": true,
     "domain_changes_remaining": 3,
     "product": {
-      "name": "My Awesome Plugin",
-      "slug": "my-awesome-plugin",
+      "name": "Your Plugin Pro",
+      "slug": "your-plugin-slug",
       "type": "plugin"
     },
     "customer": {
@@ -167,29 +102,31 @@ Activates a license key on a specific domain.
 
 **Behavior:**
 
-- **First activation:** Records activation time and calculates expiration date
-- **Same domain:** Returns success without changes (idempotent)
-- **Different domain:** Performs domain change if within limit
+| Scenario | Result |
+|----------|--------|
+| First activation | Sets `activated_at`, calculates `expires_at`, returns `is_new_activation: true` |
+| Same domain again | Returns success with `is_new_activation: false` (safe to call multiple times) |
+| Different domain | Performs domain change if limit not exceeded |
 
 ---
 
 ### 2. Validate License
 
-Checks if a license is valid and properly activated on the requesting domain.
+Checks if a license is currently valid. **Call this daily** (via cron) and on admin pages.
 
 **Endpoint:** `POST /api/v2/licenses/validate`
 
-**Request Body:**
+**Request:**
 
 ```json
 {
   "license_key": "XXXX-XXXX-XXXX-XXXX",
-  "product_slug": "my-awesome-plugin",
-  "domain": "example.com"
+  "product_slug": "your-plugin-slug",
+  "domain": "customer-site.com"
 }
 ```
 
-**Success Response (200):**
+**Valid License Response:**
 
 ```json
 {
@@ -197,14 +134,14 @@ Checks if a license is valid and properly activated on the requesting domain.
   "data": {
     "valid": true,
     "license_key": "XXXX-XXXX-XXXX-XXXX",
-    "domain": "example.com",
+    "domain": "customer-site.com",
     "status": "active",
-    "activated_at": "2024-01-15T10:30:00.000Z",
-    "expires_at": "2025-01-15T10:30:00.000Z",
+    "activated_at": "2026-01-04T10:30:00.000Z",
+    "expires_at": "2027-01-04T10:30:00.000Z",
     "days_remaining": 350,
     "product": {
-      "name": "My Awesome Plugin",
-      "slug": "my-awesome-plugin",
+      "name": "Your Plugin Pro",
+      "slug": "your-plugin-slug",
       "type": "plugin"
     }
   },
@@ -212,40 +149,53 @@ Checks if a license is valid and properly activated on the requesting domain.
 }
 ```
 
-**Usage Notes:**
+**Invalid License Response (expired/revoked):**
 
-- Call this endpoint periodically (e.g., daily cron job or on admin page load)
-- If `valid` is `false`, check the `status` and `message` for the reason
-- Automatically marks expired licenses
+```json
+{
+  "success": true,
+  "data": {
+    "valid": false,
+    "license_key": "XXXX-XXXX-XXXX-XXXX",
+    "domain": "customer-site.com",
+    "status": "expired",
+    "days_remaining": 0,
+    ...
+  },
+  "message": "License has expired"
+}
+```
+
+> **Important:** Check `data.valid`, not just `success`. Expired licenses return `success: true` with `valid: false`.
 
 ---
 
 ### 3. Deactivate License
 
-Removes a license from its current domain.
+Removes the license from the current domain. Call this before moving to a new domain.
 
 **Endpoint:** `POST /api/v2/licenses/deactivate`
 
-**Request Body:**
+**Request:**
 
 ```json
 {
   "license_key": "XXXX-XXXX-XXXX-XXXX",
-  "product_slug": "my-awesome-plugin",
-  "domain": "example.com",
+  "product_slug": "your-plugin-slug",
+  "domain": "customer-site.com",
   "reason": "Moving to new server"
 }
 ```
 
-**Success Response (200):**
+**Response:**
 
 ```json
 {
   "success": true,
   "data": {
     "license_key": "XXXX-XXXX-XXXX-XXXX",
-    "domain": "example.com",
-    "deactivated_at": "2024-02-01T15:00:00.000Z",
+    "domain": "customer-site.com",
+    "deactivated_at": "2026-02-01T15:00:00.000Z",
     "reason": "Moving to new server",
     "domain_changes_remaining": 3
   },
@@ -253,30 +203,26 @@ Removes a license from its current domain.
 }
 ```
 
-**Important:**
-
-- Deactivation does NOT count against the domain change limit
-- Encourages proper deactivation before moving to a new domain
-- Records reason for audit purposes
+> **Note:** Deactivation does NOT count against domain change limit. Encourage users to deactivate before moving.
 
 ---
 
 ### 4. License Status
 
-Returns complete information about a license.
+Get complete license information. Use for settings pages.
 
 **Endpoint:** `POST /api/v2/licenses/status`
 
-**Request Body:**
+**Request:**
 
 ```json
 {
   "license_key": "XXXX-XXXX-XXXX-XXXX",
-  "product_slug": "my-awesome-plugin"
+  "product_slug": "your-plugin-slug"
 }
 ```
 
-**Success Response (200):**
+**Response:**
 
 ```json
 {
@@ -289,18 +235,18 @@ Returns complete information about a license.
       "email": "j*******@e******.com"
     },
     "product": {
-      "name": "My Awesome Plugin",
-      "slug": "my-awesome-plugin",
+      "name": "Your Plugin Pro",
+      "slug": "your-plugin-slug",
       "type": "plugin"
     },
     "activation": {
       "is_activated": true,
-      "domain": "example.com",
-      "activated_at": "2024-01-15T10:30:00.000Z"
+      "domain": "customer-site.com",
+      "activated_at": "2026-01-04T10:30:00.000Z"
     },
     "validity": {
       "validity_days": 365,
-      "expires_at": "2025-01-15T10:30:00.000Z",
+      "expires_at": "2027-01-04T10:30:00.000Z",
       "days_remaining": 350,
       "is_expired": false
     },
@@ -310,182 +256,499 @@ Returns complete information about a license.
       "remaining": 3
     },
     "timestamps": {
-      "created_at": "2024-01-01T00:00:00.000Z",
-      "updated_at": "2024-01-15T10:30:00.000Z"
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-04T10:30:00.000Z"
     }
   },
   "message": "License status retrieved successfully"
 }
 ```
 
-**Usage Notes:**
+---
 
-- Does not require a domain parameter
-- Useful for "License Info" panels
-- Automatically updates expired status if needed
+## Complete PHP Class for WordPress
+
+Copy this class into your plugin:
+
+```php
+<?php
+/**
+ * License Manager for WordPress Plugins/Themes
+ * 
+ * @package YourPlugin
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class Your_Plugin_License {
+    
+    /**
+     * API Configuration
+     */
+    private const API_URL = 'https://license-manager-jonakyds.vercel.app/api/v2/licenses';
+    private const PRODUCT_SLUG = 'your-plugin-slug'; // Change this!
+    
+    /**
+     * Option names for storing license data
+     */
+    private const OPTION_KEY = 'your_plugin_license_key';
+    private const OPTION_DATA = 'your_plugin_license_data';
+    private const OPTION_VALID = 'your_plugin_license_valid';
+    private const OPTION_CHECKED = 'your_plugin_license_checked';
+    
+    /**
+     * Get the current site domain
+     */
+    private function get_domain(): string {
+        $domain = parse_url(home_url(), PHP_URL_HOST);
+        // Remove www. prefix for consistency
+        return preg_replace('/^www\./', '', $domain);
+    }
+    
+    /**
+     * Make API request
+     */
+    private function api_request(string $endpoint, array $body): array {
+        $response = wp_remote_post(self::API_URL . $endpoint, [
+            'headers' => [
+                'Content-Type' => 'application/json',
+            ],
+            'body' => json_encode($body),
+            'timeout' => 30,
+        ]);
+        
+        if (is_wp_error($response)) {
+            return [
+                'success' => false,
+                'error' => [
+                    'code' => 'CONNECTION_ERROR',
+                    'message' => $response->get_error_message(),
+                ],
+            ];
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return [
+                'success' => false,
+                'error' => [
+                    'code' => 'INVALID_RESPONSE',
+                    'message' => 'Invalid response from license server',
+                ],
+            ];
+        }
+        
+        return $data;
+    }
+    
+    /**
+     * Activate license
+     * Call when user submits license key
+     */
+    public function activate(string $license_key): array {
+        $license_key = strtoupper(trim($license_key));
+        
+        $result = $this->api_request('/activate', [
+            'license_key' => $license_key,
+            'product_slug' => self::PRODUCT_SLUG,
+            'domain' => $this->get_domain(),
+        ]);
+        
+        if ($result['success']) {
+            // Store license data
+            update_option(self::OPTION_KEY, $license_key);
+            update_option(self::OPTION_DATA, $result['data']);
+            update_option(self::OPTION_VALID, true);
+            update_option(self::OPTION_CHECKED, time());
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Validate license
+     * Call daily via cron and on settings page load
+     */
+    public function validate(): bool {
+        $license_key = get_option(self::OPTION_KEY);
+        
+        if (empty($license_key)) {
+            return false;
+        }
+        
+        $result = $this->api_request('/validate', [
+            'license_key' => $license_key,
+            'product_slug' => self::PRODUCT_SLUG,
+            'domain' => $this->get_domain(),
+        ]);
+        
+        // Update validation timestamp
+        update_option(self::OPTION_CHECKED, time());
+        
+        // Check if license is valid
+        $is_valid = $result['success'] && 
+                    isset($result['data']['valid']) && 
+                    $result['data']['valid'] === true;
+        
+        update_option(self::OPTION_VALID, $is_valid);
+        
+        return $is_valid;
+    }
+    
+    /**
+     * Deactivate license
+     * Call when user wants to move to different domain
+     */
+    public function deactivate(string $reason = ''): array {
+        $license_key = get_option(self::OPTION_KEY);
+        
+        if (empty($license_key)) {
+            return [
+                'success' => false,
+                'error' => ['message' => 'No license key found'],
+            ];
+        }
+        
+        $body = [
+            'license_key' => $license_key,
+            'product_slug' => self::PRODUCT_SLUG,
+            'domain' => $this->get_domain(),
+        ];
+        
+        if (!empty($reason)) {
+            $body['reason'] = $reason;
+        }
+        
+        $result = $this->api_request('/deactivate', $body);
+        
+        if ($result['success']) {
+            // Clear stored license data
+            delete_option(self::OPTION_KEY);
+            delete_option(self::OPTION_DATA);
+            delete_option(self::OPTION_VALID);
+            delete_option(self::OPTION_CHECKED);
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Get license status
+     * Call for settings page display
+     */
+    public function get_status(): array {
+        $license_key = get_option(self::OPTION_KEY);
+        
+        if (empty($license_key)) {
+            return [
+                'success' => false,
+                'error' => ['message' => 'No license key found'],
+            ];
+        }
+        
+        return $this->api_request('/status', [
+            'license_key' => $license_key,
+            'product_slug' => self::PRODUCT_SLUG,
+        ]);
+    }
+    
+    /**
+     * Check if license is valid (uses cached value)
+     * Call to gate premium features
+     */
+    public function is_valid(): bool {
+        return (bool) get_option(self::OPTION_VALID, false);
+    }
+    
+    /**
+     * Get stored license data
+     */
+    public function get_license_data(): ?array {
+        return get_option(self::OPTION_DATA, null);
+    }
+    
+    /**
+     * Check if needs validation (older than 24 hours)
+     */
+    public function needs_validation(): bool {
+        $last_checked = get_option(self::OPTION_CHECKED, 0);
+        return (time() - $last_checked) > DAY_IN_SECONDS;
+    }
+}
+```
+
+---
+
+## Implementation Examples
+
+### 1. Settings Page Integration
+
+```php
+<?php
+// In your plugin settings page
+
+$license = new Your_Plugin_License();
+
+// Handle form submission
+if (isset($_POST['activate_license'])) {
+    check_admin_referer('your_plugin_license');
+    $result = $license->activate(sanitize_text_field($_POST['license_key']));
+    
+    if ($result['success']) {
+        add_settings_error('your_plugin', 'license_activated', 
+            'License activated successfully!', 'success');
+    } else {
+        add_settings_error('your_plugin', 'license_error', 
+            $result['error']['message'], 'error');
+    }
+}
+
+if (isset($_POST['deactivate_license'])) {
+    check_admin_referer('your_plugin_license');
+    $result = $license->deactivate('User deactivated from settings');
+    
+    if ($result['success']) {
+        add_settings_error('your_plugin', 'license_deactivated', 
+            'License deactivated successfully!', 'success');
+    }
+}
+
+// Display license status
+$status = $license->get_status();
+?>
+
+<div class="wrap">
+    <h1>License Settings</h1>
+    
+    <?php settings_errors('your_plugin'); ?>
+    
+    <?php if ($license->is_valid()): ?>
+        <div class="notice notice-success">
+            <p><strong>License Active</strong></p>
+            <?php if (isset($status['data'])): ?>
+                <p>Expires: <?php echo date('F j, Y', strtotime($status['data']['validity']['expires_at'])); ?></p>
+                <p>Days Remaining: <?php echo $status['data']['validity']['days_remaining']; ?></p>
+            <?php endif; ?>
+        </div>
+        
+        <form method="post">
+            <?php wp_nonce_field('your_plugin_license'); ?>
+            <p><input type="submit" name="deactivate_license" class="button" 
+                value="Deactivate License" 
+                onclick="return confirm('Are you sure? You can reactivate on another domain.');" /></p>
+        </form>
+        
+    <?php else: ?>
+        <form method="post">
+            <?php wp_nonce_field('your_plugin_license'); ?>
+            <table class="form-table">
+                <tr>
+                    <th>License Key</th>
+                    <td>
+                        <input type="text" name="license_key" class="regular-text" 
+                            placeholder="XXXX-XXXX-XXXX-XXXX" />
+                    </td>
+                </tr>
+            </table>
+            <p><input type="submit" name="activate_license" class="button button-primary" 
+                value="Activate License" /></p>
+        </form>
+    <?php endif; ?>
+</div>
+```
+
+### 2. Daily Cron Validation
+
+```php
+<?php
+// Register cron on activation
+register_activation_hook(__FILE__, function() {
+    if (!wp_next_scheduled('your_plugin_daily_license_check')) {
+        wp_schedule_event(time(), 'daily', 'your_plugin_daily_license_check');
+    }
+});
+
+// Clear cron on deactivation
+register_deactivation_hook(__FILE__, function() {
+    wp_clear_scheduled_hook('your_plugin_daily_license_check');
+});
+
+// Cron callback
+add_action('your_plugin_daily_license_check', function() {
+    $license = new Your_Plugin_License();
+    $license->validate();
+});
+
+// Also validate on admin page load if stale
+add_action('admin_init', function() {
+    if (!is_admin()) return;
+    
+    $license = new Your_Plugin_License();
+    if ($license->needs_validation()) {
+        $license->validate();
+    }
+});
+```
+
+### 3. Gating Premium Features
+
+```php
+<?php
+// Check before enabling premium features
+$license = new Your_Plugin_License();
+
+if ($license->is_valid()) {
+    // Enable premium feature
+    add_action('init', 'your_plugin_premium_features');
+} else {
+    // Show upgrade notice
+    add_action('admin_notices', function() {
+        echo '<div class="notice notice-warning"><p>';
+        echo 'Upgrade to Pro for premium features. ';
+        echo '<a href="' . admin_url('admin.php?page=your-plugin-license') . '">Enter License Key</a>';
+        echo '</p></div>';
+    });
+}
+```
+
+---
+
+## Error Handling
+
+### Error Codes Reference
+
+| Code | HTTP | When It Happens | What To Do |
+|------|------|-----------------|------------|
+| `LICENSE_NOT_FOUND` | 404 | Key doesn't exist | Check for typos |
+| `LICENSE_EXPIRED` | 403 | License expired | Prompt renewal |
+| `LICENSE_REVOKED` | 403 | Manually revoked | Contact support |
+| `PRODUCT_NOT_FOUND` | 404 | Wrong product_slug | Check your config |
+| `PRODUCT_INACTIVE` | 403 | Product disabled | Contact support |
+| `NOT_ACTIVATED` | 400/403 | Never activated | Call activate first |
+| `DOMAIN_MISMATCH` | 400/403 | Wrong domain | Deactivate and reactivate |
+| `DOMAIN_CHANGE_LIMIT_EXCEEDED` | 403 | Too many moves | Contact support |
+| `RATE_LIMIT_EXCEEDED` | 429 | Too many requests | Wait and retry |
+| `VALIDATION_ERROR` | 400 | Invalid input | Check request format |
+
+### Handling Errors in PHP
+
+```php
+$result = $license->activate($key);
+
+if (!$result['success']) {
+    $error_code = $result['error']['code'] ?? 'UNKNOWN';
+    $error_message = $result['error']['message'] ?? 'An error occurred';
+    
+    switch ($error_code) {
+        case 'LICENSE_NOT_FOUND':
+            $user_message = 'Invalid license key. Please check and try again.';
+            break;
+        case 'LICENSE_EXPIRED':
+            $user_message = 'Your license has expired. Please renew to continue.';
+            break;
+        case 'DOMAIN_CHANGE_LIMIT_EXCEEDED':
+            $user_message = 'Domain change limit reached. Please contact support.';
+            break;
+        case 'RATE_LIMIT_EXCEEDED':
+            $user_message = 'Too many attempts. Please wait a few minutes.';
+            break;
+        default:
+            $user_message = $error_message;
+    }
+    
+    // Log for debugging
+    error_log("License error: {$error_code} - {$error_message}");
+}
+```
+
+---
+
+## Best Practices
+
+### ✅ Do
+
+- **Cache validation results** — Don't call API on every page load
+- **Use daily cron** — Validate once per day, not on every request  
+- **Store license data** — Save API response in options for quick access
+- **Handle offline gracefully** — If API is unreachable, use cached validity
+- **Sanitize input** — Always sanitize license keys before sending
+- **Show helpful errors** — Translate error codes to user-friendly messages
+
+### ❌ Don't
+
+- **Don't call from browser** — Always use server-side PHP, never JavaScript
+- **Don't validate on every page** — Use cached `is_valid()` for feature gating
+- **Don't expose API in frontend** — Keep license key server-side only
+- **Don't hardcode keys** — Let users enter their own key
+
+### Performance Tips
+
+```php
+// GOOD: Use cached value for feature checks
+if ($license->is_valid()) {
+    // Enable feature
+}
+
+// BAD: Don't call API on every check
+if ($license->validate()) { // This makes an API call!
+    // Enable feature
+}
+```
 
 ---
 
 ## Input Validation
 
 ### License Key Format
-
-- Format: `XXXX-XXXX-XXXX-XXXX`
-- Alphanumeric characters only (A-Z, 0-9)
-- Case-insensitive (automatically uppercased)
+- Pattern: `XXXX-XXXX-XXXX-XXXX`
+- Characters: A-Z, 0-9 (alphanumeric)
+- Case: Automatically uppercased
 
 ### Product Slug Format
-
-- Lowercase letters, numbers, and hyphens
+- Characters: a-z, 0-9, hyphens
 - Example: `my-awesome-plugin`
 
 ### Domain Format
-
-- Accepts with or without protocol (automatically stripped)
-- Supports localhost, IP addresses, and ports
-- Examples: `example.com`, `localhost:3000`, `192.168.1.1:8080`
+- Protocols stripped automatically
+- Supports: domains, localhost, IPs with ports
+- Examples: `example.com`, `localhost:3000`
 
 ---
 
-## Example Integration (PHP)
+## Rate Limits
 
-```php
-<?php
-class LicenseManager {
-    private $api_url = 'https://license-manager-jonakyds.vercel.app/api/v2/licenses';
-    private $product_slug = 'my-awesome-plugin';
-    
-    public function activate($license_key) {
-        $domain = parse_url(home_url(), PHP_URL_HOST);
-        
-        $response = wp_remote_post($this->api_url . '/activate', [
-            'headers' => ['Content-Type' => 'application/json'],
-            'body' => json_encode([
-                'license_key' => $license_key,
-                'product_slug' => $this->product_slug,
-                'domain' => $domain,
-            ]),
-        ]);
-        
-        return json_decode(wp_remote_retrieve_body($response), true);
-    }
-    
-    public function validate($license_key) {
-        $domain = parse_url(home_url(), PHP_URL_HOST);
-        
-        $response = wp_remote_post($this->api_url . '/validate', [
-            'headers' => ['Content-Type' => 'application/json'],
-            'body' => json_encode([
-                'license_key' => $license_key,
-                'product_slug' => $this->product_slug,
-                'domain' => $domain,
-            ]),
-        ]);
-        
-        $data = json_decode(wp_remote_retrieve_body($response), true);
-        
-        return $data['success'] && $data['data']['valid'];
-    }
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| All endpoints | 60 requests | per hour per IP |
+
+When rate limited, you'll receive:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Too many requests. Please try again in 45 seconds."
+  }
 }
 ```
 
----
-
-## Example Integration (JavaScript)
-
-```javascript
-class LicenseClient {
-  constructor(apiUrl, productSlug) {
-    this.apiUrl = apiUrl;
-    this.productSlug = productSlug;
-  }
-
-  async activate(licenseKey, domain) {
-    const response = await fetch(`${this.apiUrl}/activate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        license_key: licenseKey,
-        product_slug: this.productSlug,
-        domain: domain,
-      }),
-    });
-    return response.json();
-  }
-
-  async validate(licenseKey, domain) {
-    const response = await fetch(`${this.apiUrl}/validate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        license_key: licenseKey,
-        product_slug: this.productSlug,
-        domain: domain,
-      }),
-    });
-    const data = await response.json();
-    return data.success && data.data.valid;
-  }
-
-  async deactivate(licenseKey, domain, reason) {
-    const response = await fetch(`${this.apiUrl}/deactivate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        license_key: licenseKey,
-        product_slug: this.productSlug,
-        domain: domain,
-        reason: reason,
-      }),
-    });
-    return response.json();
-  }
-
-  async status(licenseKey) {
-    const response = await fetch(`${this.apiUrl}/status`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        license_key: licenseKey,
-        product_slug: this.productSlug,
-      }),
-    });
-    return response.json();
-  }
-}
-
-// Usage
-const client = new LicenseClient(
-  'https://license-manager-jonakyds.vercel.app/api/v2/licenses',
-  'my-awesome-plugin'
-);
-```
+**Headers included:**
+- `Retry-After`: Seconds to wait
+- `X-RateLimit-Remaining`: Requests left
 
 ---
 
-## Security Considerations
+## Support
 
-1. **Server-to-Server Only:** This API is designed for backend-to-backend communication, not browser clients
-2. **HTTPS Only:** Always use HTTPS in production
-3. **Email Masking:** Customer emails are automatically masked (e.g., `j*******@e******.com`) for privacy
-4. **Rate Limiting:** Implemented via Upstash Redis with per-IP and per-license-key limits
-5. **Brute Force Protection:** Failed validation attempts are tracked and blocked after 5 failures
-6. **IP Logging:** API logs IP addresses for audit purposes
-7. **License Key Secrecy:** Treat license keys like passwords
-8. **No Browser Caching:** Responses include `Cache-Control: no-store` headers
+For issues with the License API, check:
+1. Correct `product_slug` configuration
+2. Valid license key format
+3. Domain matches the activated domain
+4. License hasn't expired or been revoked
 
----
-
-## Changelog
-
-### v2.0 (Current)
-- Initial versioned release
-- Server-to-server architecture (not for browser use)
-- Customer email masking for privacy
-- **Rate limiting via Upstash Redis**
-- **Brute force protection for failed attempts**
-- Consistent JSON response format
-- Comprehensive validation with Zod schemas
-- Auto-expiration handling
-- Domain change tracking
-- Audit logging for deactivations
+For technical issues, contact the API administrator.

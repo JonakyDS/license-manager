@@ -123,42 +123,41 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Perform domain change atomically in a transaction
+      // Perform domain change (sequential operations - neon-http doesn't support transactions)
       const newActivationId = generateId();
-      await db.transaction(async (tx) => {
-        // Deactivate the old domain
-        await tx
-          .update(licenseActivation)
-          .set({
-            isActive: false,
-            deactivatedAt: new Date(),
-            deactivationReason: `Domain changed to ${domain}`,
-          })
-          .where(
-            and(
-              eq(licenseActivation.id, existingActivation.id),
-              eq(licenseActivation.isActive, true)
-            )
-          );
 
-        // Create new activation for the new domain
-        await tx.insert(licenseActivation).values({
-          id: newActivationId,
-          licenseId: licenseData.id,
-          domain: domain,
-          ipAddress: ipAddress,
-          isActive: true,
-          activatedAt: new Date(),
-        });
+      // Deactivate the old domain
+      await db
+        .update(licenseActivation)
+        .set({
+          isActive: false,
+          deactivatedAt: new Date(),
+          deactivationReason: `Domain changed to ${domain}`,
+        })
+        .where(
+          and(
+            eq(licenseActivation.id, existingActivation.id),
+            eq(licenseActivation.isActive, true)
+          )
+        );
 
-        // Increment domain changes used
-        await tx
-          .update(license)
-          .set({
-            domainChangesUsed: licenseData.domainChangesUsed + 1,
-          })
-          .where(eq(license.id, licenseData.id));
+      // Create new activation for the new domain
+      await db.insert(licenseActivation).values({
+        id: newActivationId,
+        licenseId: licenseData.id,
+        domain: domain,
+        ipAddress: ipAddress,
+        isActive: true,
+        activatedAt: new Date(),
       });
+
+      // Increment domain changes used
+      await db
+        .update(license)
+        .set({
+          domainChangesUsed: licenseData.domainChangesUsed + 1,
+        })
+        .where(eq(license.id, licenseData.id));
 
       const response = successResponse<ActivateResponseData>(
         {
@@ -191,28 +190,27 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(now);
     expiresAt.setDate(expiresAt.getDate() + licenseData.validityDays);
 
-    // Perform first-time activation atomically in a transaction
+    // Perform first-time activation (sequential operations - neon-http doesn't support transactions)
     const activationId = generateId();
-    await db.transaction(async (tx) => {
-      // Create activation record
-      await tx.insert(licenseActivation).values({
-        id: activationId,
-        licenseId: licenseData.id,
-        domain: domain,
-        ipAddress: ipAddress,
-        isActive: true,
-        activatedAt: now,
-      });
 
-      // Update license with activation and expiration dates
-      await tx
-        .update(license)
-        .set({
-          activatedAt: now,
-          expiresAt: expiresAt,
-        })
-        .where(eq(license.id, licenseData.id));
+    // Create activation record
+    await db.insert(licenseActivation).values({
+      id: activationId,
+      licenseId: licenseData.id,
+      domain: domain,
+      ipAddress: ipAddress,
+      isActive: true,
+      activatedAt: now,
     });
+
+    // Update license with activation and expiration dates
+    await db
+      .update(license)
+      .set({
+        activatedAt: now,
+        expiresAt: expiresAt,
+      })
+      .where(eq(license.id, licenseData.id));
 
     const response = successResponse<ActivateResponseData>(
       {
