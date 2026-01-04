@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import { signOut } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";

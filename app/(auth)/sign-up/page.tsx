@@ -2,7 +2,7 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import Link from "next/link";
 import { signUp } from "@/lib/auth-client";
 import { signUpSchema, type SignUpInput } from "@/lib/validations/auth";

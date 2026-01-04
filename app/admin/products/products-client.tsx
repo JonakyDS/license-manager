@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { useSearchParams, usePathname } from "next/navigation";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import {

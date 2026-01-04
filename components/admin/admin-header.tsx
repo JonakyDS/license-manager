@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import { cn } from "@/lib/utils";
 import { AdminMobileSidebar } from "./admin-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
