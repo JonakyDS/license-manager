@@ -185,7 +185,7 @@ export interface NaldaCsvUploadRequest {
   sftp_port: number;
   sftp_username: string;
   sftp_password: string;
-  csv_file_key: string;
+  csv_file: File;
 }
 
 export interface NaldaCsvUploadRequestResponseData {
@@ -193,6 +193,9 @@ export interface NaldaCsvUploadRequestResponseData {
   license_id: string;
   domain: string;
   csv_file_key: string;
+  csv_file_url: string;
+  csv_file_name: string;
+  csv_file_size: number;
   status: "pending" | "processing" | "processed" | "failed";
   created_at: string;
 }
@@ -201,6 +204,9 @@ export interface NaldaCsvUploadRequestListItem {
   id: string;
   domain: string;
   csv_file_key: string;
+  csv_file_url: string;
+  csv_file_name: string;
+  csv_file_size: number;
   status: "pending" | "processing" | "processed" | "failed";
   processed_at: string | null;
   error_message: string | null;
