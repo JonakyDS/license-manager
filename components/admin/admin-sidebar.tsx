@@ -6,7 +6,12 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import {
   Tooltip,
   TooltipContent,
@@ -241,6 +246,7 @@ export function AdminMobileSidebar() {
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="w-[280px] p-0">
+        <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
         {/* Header */}
         <div className="flex h-16 items-center border-b px-4">
           <Link
