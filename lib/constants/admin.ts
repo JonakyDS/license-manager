@@ -21,6 +21,12 @@ export const PRODUCT_TYPES = [
   { value: "other", label: "Other" },
 ] as const;
 
+export const PRODUCT_STATUS_OPTIONS = [
+  { value: "all", label: "All Status" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+] as const;
+
 export const LICENSE_STATUS = [
   { value: "active", label: "Active" },
   { value: "expired", label: "Expired" },

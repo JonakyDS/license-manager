@@ -51,6 +51,54 @@ export interface UserTableData {
   updatedAt: Date;
 }
 
+// Product specific types
+export interface ProductFilters extends FilterConfig {
+  type?: string;
+  status?: string;
+}
+
+export interface ProductTableData {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  type: "plugin" | "theme" | "source_code" | "other";
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  _count?: {
+    licenses: number;
+  };
+}
+
+// License specific types
+export interface LicenseFilters extends FilterConfig {
+  status?: string;
+  productId?: string;
+}
+
+export interface LicenseTableData {
+  id: string;
+  productId: string;
+  licenseKey: string;
+  customerName: string | null;
+  customerEmail: string | null;
+  status: "active" | "expired" | "revoked";
+  validityDays: number;
+  activatedAt: Date | null;
+  expiresAt: Date | null;
+  maxDomainChanges: number;
+  domainChangesUsed: number;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  product?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+}
+
 // Admin navigation types
 export interface NavItem {
   title: string;

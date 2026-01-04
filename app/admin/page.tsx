@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { PageHeader, StatCard } from "@/components/admin";
 import { getUserStats } from "@/lib/actions/users";
+import { getProductStats } from "@/lib/actions/products";
+import { getLicenseStats } from "@/lib/actions/licenses";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,6 +20,9 @@ import {
   ArrowRightIcon,
   PackageIcon,
   KeyIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  TagIcon,
 } from "lucide-react";
 
 export const metadata = {
@@ -57,6 +62,72 @@ async function UserStatsCards() {
   );
 }
 
+async function ProductStatsCards() {
+  const stats = await getProductStats();
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <StatCard
+        title="Total Products"
+        value={stats.total}
+        icon={<PackageIcon className="size-4" />}
+        description="All digital products"
+      />
+      <StatCard
+        title="Active"
+        value={stats.active}
+        icon={<CheckCircleIcon className="size-4" />}
+        description="Active products"
+      />
+      <StatCard
+        title="Inactive"
+        value={stats.inactive}
+        icon={<XCircleIcon className="size-4" />}
+        description="Inactive products"
+      />
+      <StatCard
+        title="By Type"
+        value={Object.keys(stats.byType).length}
+        icon={<TagIcon className="size-4" />}
+        description="Product categories"
+      />
+    </div>
+  );
+}
+
+async function LicenseStatsCards() {
+  const stats = await getLicenseStats();
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <StatCard
+        title="Total Licenses"
+        value={stats.total}
+        icon={<KeyIcon className="size-4" />}
+        description="All generated licenses"
+      />
+      <StatCard
+        title="Active"
+        value={stats.active}
+        icon={<CheckCircleIcon className="size-4" />}
+        description="Currently active licenses"
+      />
+      <StatCard
+        title="Expired"
+        value={stats.expired}
+        icon={<XCircleIcon className="size-4" />}
+        description="Expired licenses"
+      />
+      <StatCard
+        title="Revoked"
+        value={stats.revoked}
+        icon={<XCircleIcon className="size-4" />}
+        description="Manually revoked"
+      />
+    </div>
+  );
+}
+
 function StatsLoadingSkeleton() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -80,6 +151,22 @@ export default function AdminOverviewPage() {
         <h2 className="text-lg font-semibold">User Statistics</h2>
         <Suspense fallback={<StatsLoadingSkeleton />}>
           <UserStatsCards />
+        </Suspense>
+      </section>
+
+      {/* Product Stats */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">Product Statistics</h2>
+        <Suspense fallback={<StatsLoadingSkeleton />}>
+          <ProductStatsCards />
+        </Suspense>
+      </section>
+
+      {/* License Stats */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">License Statistics</h2>
+        <Suspense fallback={<StatsLoadingSkeleton />}>
+          <LicenseStatsCards />
         </Suspense>
       </section>
 
@@ -116,7 +203,7 @@ export default function AdminOverviewPage() {
               <CardDescription>Manage your digital products</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button asChild variant="outline" className="w-full" disabled>
+              <Button asChild variant="outline" className="w-full">
                 <Link href="/admin/products">
                   Manage Products
                   <ArrowRightIcon className="ml-2 size-4" />
@@ -136,7 +223,7 @@ export default function AdminOverviewPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button asChild variant="outline" className="w-full" disabled>
+              <Button asChild variant="outline" className="w-full">
                 <Link href="/admin/licenses">
                   Manage Licenses
                   <ArrowRightIcon className="ml-2 size-4" />
