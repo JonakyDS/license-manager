@@ -2,7 +2,7 @@
 
 import { db } from "@/db/drizzle";
 import { license, product } from "@/db/schema";
-import { eq, ilike, or, count, desc, asc, and } from "drizzle-orm";
+import { eq, ilike, or, count, desc, asc, and, SQL } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type {
@@ -105,36 +105,23 @@ export async function getLicenses(
               ? license.expiresAt
               : license.createdAt;
 
-  // Execute queries with product join
+  // Execute queries using relational API with product eager loading
   const [licenses, totalResult] = await Promise.all([
-    db
-      .select({
-        id: license.id,
-        productId: license.productId,
-        licenseKey: license.licenseKey,
-        customerName: license.customerName,
-        customerEmail: license.customerEmail,
-        status: license.status,
-        validityDays: license.validityDays,
-        activatedAt: license.activatedAt,
-        expiresAt: license.expiresAt,
-        maxDomainChanges: license.maxDomainChanges,
-        domainChangesUsed: license.domainChangesUsed,
-        notes: license.notes,
-        createdAt: license.createdAt,
-        updatedAt: license.updatedAt,
+    db.query.license.findMany({
+      where: whereClause,
+      orderBy: sortOrder(sortField),
+      limit: pageSize,
+      offset: offset,
+      with: {
         product: {
-          id: product.id,
-          name: product.name,
-          slug: product.slug,
+          columns: {
+            id: true,
+            name: true,
+            slug: true,
+          },
         },
-      })
-      .from(license)
-      .leftJoin(product, eq(license.productId, product.id))
-      .where(whereClause)
-      .orderBy(sortOrder(sortField))
-      .limit(pageSize)
-      .offset(offset),
+      },
+    }),
     db.select({ count: count() }).from(license).where(whereClause),
   ]);
 
@@ -157,38 +144,24 @@ export async function getLicenseById(
   id: string
 ): Promise<ActionResult<LicenseTableData>> {
   try {
-    const result = await db
-      .select({
-        id: license.id,
-        productId: license.productId,
-        licenseKey: license.licenseKey,
-        customerName: license.customerName,
-        customerEmail: license.customerEmail,
-        status: license.status,
-        validityDays: license.validityDays,
-        activatedAt: license.activatedAt,
-        expiresAt: license.expiresAt,
-        maxDomainChanges: license.maxDomainChanges,
-        domainChangesUsed: license.domainChangesUsed,
-        notes: license.notes,
-        createdAt: license.createdAt,
-        updatedAt: license.updatedAt,
+    const result = await db.query.license.findFirst({
+      where: eq(license.id, id),
+      with: {
         product: {
-          id: product.id,
-          name: product.name,
-          slug: product.slug,
+          columns: {
+            id: true,
+            name: true,
+            slug: true,
+          },
         },
-      })
-      .from(license)
-      .leftJoin(product, eq(license.productId, product.id))
-      .where(eq(license.id, id))
-      .limit(1);
+      },
+    });
 
-    if (result.length === 0) {
+    if (!result) {
       return { success: false, message: "License not found" };
     }
 
-    return { success: true, data: result[0] as LicenseTableData };
+    return { success: true, data: result as LicenseTableData };
   } catch (error) {
     console.error("Error fetching license:", error);
     return { success: false, message: "Failed to fetch license" };
@@ -223,13 +196,12 @@ export async function createLicense(
     }
 
     // Verify product exists
-    const existingProduct = await db
-      .select()
-      .from(product)
-      .where(eq(product.id, validatedData.data.productId))
-      .limit(1);
+    const existingProduct = await db.query.product.findFirst({
+      where: eq(product.id, validatedData.data.productId),
+      columns: { id: true },
+    });
 
-    if (existingProduct.length === 0) {
+    if (!existingProduct) {
       return { success: false, message: "Product not found" };
     }
 
@@ -237,12 +209,11 @@ export async function createLicense(
     let licenseKey = generateLicenseKey();
     let attempts = 0;
     while (attempts < 10) {
-      const existing = await db
-        .select()
-        .from(license)
-        .where(eq(license.licenseKey, licenseKey))
-        .limit(1);
-      if (existing.length === 0) break;
+      const existing = await db.query.license.findFirst({
+        where: eq(license.licenseKey, licenseKey),
+        columns: { id: true },
+      });
+      if (!existing) break;
       licenseKey = generateLicenseKey();
       attempts++;
     }
@@ -302,13 +273,12 @@ export async function updateLicense(
     }
 
     // Verify product exists
-    const existingProduct = await db
-      .select()
-      .from(product)
-      .where(eq(product.id, validatedData.data.productId))
-      .limit(1);
+    const existingProduct = await db.query.product.findFirst({
+      where: eq(product.id, validatedData.data.productId),
+      columns: { id: true },
+    });
 
-    if (existingProduct.length === 0) {
+    if (!existingProduct) {
       return { success: false, message: "Product not found" };
     }
 

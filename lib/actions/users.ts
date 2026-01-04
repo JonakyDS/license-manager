@@ -78,15 +78,14 @@ export async function getUsers(
             ? user.emailVerified
             : user.createdAt;
 
-  // Execute queries
+  // Execute queries using relational API
   const [users, totalResult] = await Promise.all([
-    db
-      .select()
-      .from(user)
-      .where(whereClause)
-      .orderBy(sortOrder(sortField))
-      .limit(pageSize)
-      .offset(offset),
+    db.query.user.findMany({
+      where: whereClause,
+      orderBy: sortOrder(sortField),
+      limit: pageSize,
+      offset: offset,
+    }),
     db.select({ count: count() }).from(user).where(whereClause),
   ]);
 
@@ -109,13 +108,15 @@ export async function getUserById(
   id: string
 ): Promise<ActionResult<UserTableData>> {
   try {
-    const result = await db.select().from(user).where(eq(user.id, id)).limit(1);
+    const result = await db.query.user.findFirst({
+      where: eq(user.id, id),
+    });
 
-    if (result.length === 0) {
+    if (!result) {
       return { success: false, message: "User not found" };
     }
 
-    return { success: true, data: result[0] as UserTableData };
+    return { success: true, data: result as UserTableData };
   } catch (error) {
     console.error("Error fetching user:", error);
     return { success: false, message: "Failed to fetch user" };
@@ -144,13 +145,11 @@ export async function createUser(
     }
 
     // Check if email already exists
-    const existingUser = await db
-      .select()
-      .from(user)
-      .where(eq(user.email, validatedData.data.email))
-      .limit(1);
+    const existingUser = await db.query.user.findFirst({
+      where: eq(user.email, validatedData.data.email),
+    });
 
-    if (existingUser.length > 0) {
+    if (existingUser) {
       return {
         success: false,
         message: "A user with this email already exists",
@@ -205,18 +204,14 @@ export async function updateUser(
     }
 
     // Check if email is taken by another user
-    const existingUser = await db
-      .select()
-      .from(user)
-      .where(
-        and(
-          eq(user.email, validatedData.data.email),
-          sql`${user.id} != ${validatedData.data.id}`
-        )
-      )
-      .limit(1);
+    const existingUser = await db.query.user.findFirst({
+      where: and(
+        eq(user.email, validatedData.data.email),
+        sql`${user.id} != ${validatedData.data.id}`
+      ),
+    });
 
-    if (existingUser.length > 0) {
+    if (existingUser) {
       return {
         success: false,
         message: "A user with this email already exists",

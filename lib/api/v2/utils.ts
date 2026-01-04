@@ -199,16 +199,12 @@ export function isLicenseExpired(expiresAt: Date | null): boolean {
  * Gets the current active activation for a license.
  */
 export async function getActiveActivation(licenseId: string) {
-  const [activation] = await db
-    .select()
-    .from(licenseActivation)
-    .where(
-      and(
-        eq(licenseActivation.licenseId, licenseId),
-        eq(licenseActivation.isActive, true)
-      )
-    )
-    .limit(1);
+  const activation = await db.query.licenseActivation.findFirst({
+    where: and(
+      eq(licenseActivation.licenseId, licenseId),
+      eq(licenseActivation.isActive, true)
+    ),
+  });
 
   return activation || null;
 }
@@ -217,17 +213,19 @@ export async function getActiveActivation(licenseId: string) {
  * Finds a license by its key with product information.
  */
 export async function findLicenseByKey(licenseKey: string) {
-  const [result] = await db
-    .select({
-      license: license,
-      product: product,
-    })
-    .from(license)
-    .innerJoin(product, eq(license.productId, product.id))
-    .where(eq(license.licenseKey, licenseKey))
-    .limit(1);
+  const result = await db.query.license.findFirst({
+    where: eq(license.licenseKey, licenseKey),
+    with: {
+      product: true,
+    },
+  });
 
-  return result || null;
+  if (!result) return null;
+
+  return {
+    license: result,
+    product: result.product,
+  };
 }
 
 /**
@@ -237,19 +235,19 @@ export async function findLicenseByKeyAndProduct(
   licenseKey: string,
   productSlug: string
 ) {
-  const [result] = await db
-    .select({
-      license: license,
-      product: product,
-    })
-    .from(license)
-    .innerJoin(product, eq(license.productId, product.id))
-    .where(
-      and(eq(license.licenseKey, licenseKey), eq(product.slug, productSlug))
-    )
-    .limit(1);
+  const result = await db.query.license.findFirst({
+    where: eq(license.licenseKey, licenseKey),
+    with: {
+      product: true,
+    },
+  });
 
-  return result || null;
+  if (!result || result.product.slug !== productSlug) return null;
+
+  return {
+    license: result,
+    product: result.product,
+  };
 }
 
 /**

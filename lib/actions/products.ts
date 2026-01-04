@@ -99,54 +99,33 @@ export async function getProducts(
             ? product.active
             : product.createdAt;
 
-  // Execute queries
+  // Execute queries using relational API
   const [products, totalResult] = await Promise.all([
-    db
-      .select({
-        id: product.id,
-        name: product.name,
-        slug: product.slug,
-        description: product.description,
-        type: product.type,
-        active: product.active,
-        createdAt: product.createdAt,
-        updatedAt: product.updatedAt,
-      })
-      .from(product)
-      .where(whereClause)
-      .orderBy(sortOrder(sortField))
-      .limit(pageSize)
-      .offset(offset),
+    db.query.product.findMany({
+      where: whereClause,
+      orderBy: sortOrder(sortField),
+      limit: pageSize,
+      offset: offset,
+      with: {
+        licenses: {
+          columns: { id: true },
+        },
+      },
+    }),
     db.select({ count: count() }).from(product).where(whereClause),
   ]);
 
-  // Get license counts for each product
-  const productIds = products.map((p) => p.id);
-  const licenseCounts =
-    productIds.length > 0
-      ? await db
-          .select({
-            productId: license.productId,
-            count: count(),
-          })
-          .from(license)
-          .where(
-            sql`${license.productId} IN (${sql.join(
-              productIds.map((id) => sql`${id}`),
-              sql`, `
-            )})`
-          )
-          .groupBy(license.productId)
-      : [];
-
-  const licenseCountMap = new Map(
-    licenseCounts.map((lc) => [lc.productId, lc.count])
-  );
-
   const productsWithCounts = products.map((p) => ({
-    ...p,
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    description: p.description,
+    type: p.type,
+    active: p.active,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
     _count: {
-      licenses: licenseCountMap.get(p.id) ?? 0,
+      licenses: p.licenses.length,
     },
   }));
 
@@ -168,15 +147,15 @@ export async function getProducts(
 export async function getAllProducts(): Promise<
   { id: string; name: string; slug: string }[]
 > {
-  const products = await db
-    .select({
-      id: product.id,
-      name: product.name,
-      slug: product.slug,
-    })
-    .from(product)
-    .where(eq(product.active, true))
-    .orderBy(asc(product.name));
+  const products = await db.query.product.findMany({
+    where: eq(product.active, true),
+    orderBy: asc(product.name),
+    columns: {
+      id: true,
+      name: true,
+      slug: true,
+    },
+  });
 
   return products;
 }
@@ -186,17 +165,15 @@ export async function getProductById(
   id: string
 ): Promise<ActionResult<ProductTableData>> {
   try {
-    const result = await db
-      .select()
-      .from(product)
-      .where(eq(product.id, id))
-      .limit(1);
+    const result = await db.query.product.findFirst({
+      where: eq(product.id, id),
+    });
 
-    if (result.length === 0) {
+    if (!result) {
       return { success: false, message: "Product not found" };
     }
 
-    return { success: true, data: result[0] as ProductTableData };
+    return { success: true, data: result as ProductTableData };
   } catch (error) {
     console.error("Error fetching product:", error);
     return { success: false, message: "Failed to fetch product" };
@@ -231,13 +208,11 @@ export async function createProduct(
     }
 
     // Check if slug already exists
-    const existingProduct = await db
-      .select()
-      .from(product)
-      .where(eq(product.slug, validatedData.data.slug))
-      .limit(1);
+    const existingProduct = await db.query.product.findFirst({
+      where: eq(product.slug, validatedData.data.slug),
+    });
 
-    if (existingProduct.length > 0) {
+    if (existingProduct) {
       return {
         success: false,
         message: "A product with this slug already exists",
@@ -298,18 +273,14 @@ export async function updateProduct(
     }
 
     // Check if slug is taken by another product
-    const existingProduct = await db
-      .select()
-      .from(product)
-      .where(
-        and(
-          eq(product.slug, validatedData.data.slug),
-          sql`${product.id} != ${validatedData.data.id}`
-        )
-      )
-      .limit(1);
+    const existingProduct = await db.query.product.findFirst({
+      where: and(
+        eq(product.slug, validatedData.data.slug),
+        sql`${product.id} != ${validatedData.data.id}`
+      ),
+    });
 
-    if (existingProduct.length > 0) {
+    if (existingProduct) {
       return {
         success: false,
         message: "A product with this slug already exists",
