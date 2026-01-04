@@ -17,10 +17,10 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Licence Manager",
-    template: "%s | Licence Manager",
+    default: "License Manager",
+    template: "%s | License Manager",
   },
-  description: "Manage your software licences efficiently",
+  description: "Manage your software licenses efficiently",
 };
 
 export default function RootLayout({

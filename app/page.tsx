@@ -12,10 +12,10 @@ export default function Home() {
 
         <div className="space-y-4">
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-            Licence Management Server
+            License Management Server
           </h1>
           <p className="text-muted-foreground text-xl">
-            This is the official licence management server for our plugins and
+            This is the official license management server for our plugins and
             themes.
           </p>
         </div>

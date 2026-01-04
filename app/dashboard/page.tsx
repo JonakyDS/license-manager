@@ -18,7 +18,7 @@ export default async function DashboardPage() {
     <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950">
       <header className="border-b bg-white dark:bg-zinc-900">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
-          <h1 className="text-xl font-semibold">Licence Manager</h1>
+          <h1 className="text-xl font-semibold">License Manager</h1>
           <div className="flex items-center gap-4">
             <span className="text-sm text-zinc-600 dark:text-zinc-400">
               {session.user.email}
