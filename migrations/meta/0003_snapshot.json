@@ -110,12 +110,8 @@
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
           "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -280,12 +276,8 @@
           "name": "license_product_id_product_id_fk",
           "tableFrom": "license",
           "tableTo": "product",
-          "columnsFrom": [
-            "product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["product_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -295,9 +287,7 @@
         "license_license_key_unique": {
           "name": "license_license_key_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "license_key"
-          ]
+          "columns": ["license_key"]
         }
       },
       "policies": {},
@@ -415,12 +405,8 @@
           "name": "license_activation_license_id_license_id_fk",
           "tableFrom": "license_activation",
           "tableTo": "license",
-          "columnsFrom": [
-            "license_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["license_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -511,9 +497,7 @@
         "product_slug_unique": {
           "name": "product_slug_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "slug"
-          ]
+          "columns": ["slug"]
         }
       },
       "policies": {},
@@ -597,12 +581,8 @@
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
           "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -612,9 +592,7 @@
         "session_token_unique": {
           "name": "session_token_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "token"
-          ]
+          "columns": ["token"]
         }
       },
       "policies": {},
@@ -686,9 +664,7 @@
         "user_email_unique": {
           "name": "user_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         }
       },
       "policies": {},
@@ -767,29 +743,17 @@
     "public.license_status": {
       "name": "license_status",
       "schema": "public",
-      "values": [
-        "active",
-        "expired",
-        "revoked"
-      ]
+      "values": ["active", "expired", "revoked"]
     },
     "public.product_type": {
       "name": "product_type",
       "schema": "public",
-      "values": [
-        "plugin",
-        "theme",
-        "source_code",
-        "other"
-      ]
+      "values": ["plugin", "theme", "source_code", "other"]
     },
     "public.user_role": {
       "name": "user_role",
       "schema": "public",
-      "values": [
-        "user",
-        "admin"
-      ]
+      "values": ["user", "admin"]
     }
   },
   "schemas": {},
