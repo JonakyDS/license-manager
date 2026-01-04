@@ -43,19 +43,15 @@ const sftpCredentialsSchema = z.object({
     )
     .refine(
       (val) => {
-        // Allow valid hostnames, IPs, and localhost
-        const hostnameRegex =
-          /^(?!:\/\/)([a-zA-Z0-9-_]+\.)*[a-zA-Z0-9][a-zA-Z0-9-_]+\.[a-zA-Z]{2,11}?$/;
-        const ipRegex =
-          /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-        const localhostRegex = /^localhost$/i;
-        return (
-          hostnameRegex.test(val) ||
-          ipRegex.test(val) ||
-          localhostRegex.test(val)
-        );
+        // Only allow subdomains of nalda.com (e.g., sftp.nalda.com, server1.nalda.com)
+        const naldaSubdomainRegex =
+          /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.nalda\.com$/i;
+        return naldaSubdomainRegex.test(val);
       },
-      { message: "Invalid hostname format" }
+      {
+        message:
+          "Hostname must be a subdomain of nalda.com (e.g., sftp.nalda.com)",
+      }
     ),
   port: z
     .number()
