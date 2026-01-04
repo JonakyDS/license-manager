@@ -1,6 +1,6 @@
-# Nalda API Documentation
+# Nalda API Documentation for WordPress Plugin Developers
 
-This document describes the API endpoints for Nalda CSV upload and SFTP validation.
+This document describes all API endpoints available for integrating CSV upload functionality into your Nalda WordPress plugin.
 
 ## Base URL
 
@@ -8,169 +8,157 @@ This document describes the API endpoints for Nalda CSV upload and SFTP validati
 https://license-manager-jonakyds.vercel.app
 ```
 
-All API endpoints are relative to this base URL.
+---
 
-## Overview
+## Quick Reference
 
-The Nalda API provides:
-1. **CSV Upload** - Upload CSV files directly to the API (files are stored on UploadThing)
-2. **SFTP Validation** - Validate SFTP credentials before creating upload requests
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v2/nalda/csv-upload` | POST | Upload CSV file with SFTP credentials |
+| `/api/v2/nalda/csv-upload/list` | GET | List previous upload requests |
+| `/api/v2/nalda/sftp-validate` | POST | Validate SFTP credentials |
 
-**Note: CSV files are uploaded via `multipart/form-data`. The API receives the file, validates the license, and then stores it on UploadThing.**
+---
 
-## Setup
+## Authentication
 
-### Environment Variables
+All API requests require:
+- **`license_key`** - Valid license key in format `XXXX-XXXX-XXXX-XXXX`
+- **`domain`** - The WordPress site domain (use `parse_url(home_url(), PHP_URL_HOST)`)
 
-Add the following environment variable to your `.env.local` file:
+The license must be active, not expired, and activated for the requesting domain.
 
-```env
-UPLOADTHING_TOKEN=your_uploadthing_token_here
+---
+
+## API Endpoints
+
+### 1. Upload CSV File
+
+Upload a CSV file along with SFTP credentials for processing.
+
+```
+POST /api/v2/nalda/csv-upload
+Content-Type: multipart/form-data
 ```
 
-Get your token from [UploadThing Dashboard](https://uploadthing.com/dashboard).
-
-## Endpoints
-
-### 1. Upload CSV and Create Request
-
-Uploads a CSV file along with SFTP credentials. The API validates the license, uploads the file to storage, and creates a processing request.
-
-**Endpoint:** `POST /api/v2/nalda/csv-upload`
-
-**Content-Type:** `multipart/form-data`
-
-**Form Fields:**
+#### Request Parameters
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `license_key` | string | Yes | Valid license key (format: XXXX-XXXX-XXXX-XXXX) |
-| `domain` | string | Yes | Domain activated for the license |
-| `sftp_host` | string | Yes | SFTP server hostname (must be subdomain of nalda.com) |
-| `sftp_port` | string | No | SFTP port (default: 22) |
-| `sftp_username` | string | Yes | SFTP username |
-| `sftp_password` | string | Yes | SFTP password |
-| `csv_file` | File | Yes | The CSV file to upload (max 16MB) |
+| `license_key` | string | ✅ | License key (XXXX-XXXX-XXXX-XXXX) |
+| `domain` | string | ✅ | WordPress site domain |
+| `sftp_host` | string | ✅ | SFTP hostname (must be *.nalda.com) |
+| `sftp_port` | string | ❌ | SFTP port (default: 22) |
+| `sftp_username` | string | ✅ | SFTP username |
+| `sftp_password` | string | ✅ | SFTP password |
+| `csv_file` | File | ✅ | CSV file (max 16MB) |
 
-**Example Request (cURL):**
-
-```bash
-curl -X POST "https://license-manager-jonakyds.vercel.app/api/v2/nalda/csv-upload" \
-  -F "license_key=ABCD-1234-EFGH-5678" \
-  -F "domain=mysite.com" \
-  -F "sftp_host=sftp.nalda.com" \
-  -F "sftp_port=22" \
-  -F "sftp_username=uploader" \
-  -F "sftp_password=secret" \
-  -F "csv_file=@/path/to/data.csv"
-```
-
-**Example Request (PHP/WordPress):**
+#### PHP Example
 
 ```php
 <?php
-function upload_csv_to_nalda($license_key, $domain, $sftp_credentials, $csv_file_path) {
+/**
+ * Upload CSV file to Nalda API
+ *
+ * @param string $license_key The license key
+ * @param string $csv_file_path Path to the CSV file
+ * @param array  $sftp_config SFTP configuration
+ * @return array API response
+ */
+function nalda_upload_csv( $license_key, $csv_file_path, $sftp_config ) {
     $api_url = 'https://license-manager-jonakyds.vercel.app/api/v2/nalda/csv-upload';
-    
-    // Prepare the file for upload
-    $csv_file = new CURLFile($csv_file_path, 'text/csv', basename($csv_file_path));
-    
-    $post_data = array(
+    $domain  = parse_url( home_url(), PHP_URL_HOST );
+
+    // Validate file exists
+    if ( ! file_exists( $csv_file_path ) ) {
+        return array(
+            'success' => false,
+            'error'   => array( 'message' => 'CSV file not found' ),
+        );
+    }
+
+    // Build multipart form data
+    $boundary = wp_generate_uuid4();
+    $body     = '';
+
+    // Add text fields
+    $fields = array(
         'license_key'   => $license_key,
         'domain'        => $domain,
-        'sftp_host'     => $sftp_credentials['host'],
-        'sftp_port'     => $sftp_credentials['port'] ?? 22,
-        'sftp_username' => $sftp_credentials['username'],
-        'sftp_password' => $sftp_credentials['password'],
-        'csv_file'      => $csv_file,
+        'sftp_host'     => $sftp_config['host'],
+        'sftp_port'     => (string) ( $sftp_config['port'] ?? 22 ),
+        'sftp_username' => $sftp_config['username'],
+        'sftp_password' => $sftp_config['password'],
     );
-    
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $api_url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-        'Accept: application/json',
-    ));
-    
-    $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    
-    return array(
-        'status_code' => $http_code,
-        'body' => json_decode($response, true),
-    );
+
+    foreach ( $fields as $name => $value ) {
+        $body .= "--{$boundary}\r\n";
+        $body .= "Content-Disposition: form-data; name=\"{$name}\"\r\n\r\n";
+        $body .= "{$value}\r\n";
+    }
+
+    // Add CSV file
+    $file_name    = basename( $csv_file_path );
+    $file_content = file_get_contents( $csv_file_path );
+
+    $body .= "--{$boundary}\r\n";
+    $body .= "Content-Disposition: form-data; name=\"csv_file\"; filename=\"{$file_name}\"\r\n";
+    $body .= "Content-Type: text/csv\r\n\r\n";
+    $body .= "{$file_content}\r\n";
+    $body .= "--{$boundary}--\r\n";
+
+    // Send request
+    $response = wp_remote_post( $api_url, array(
+        'headers' => array(
+            'Content-Type' => "multipart/form-data; boundary={$boundary}",
+        ),
+        'body'    => $body,
+        'timeout' => 60,
+    ) );
+
+    if ( is_wp_error( $response ) ) {
+        return array(
+            'success' => false,
+            'error'   => array( 'message' => $response->get_error_message() ),
+        );
+    }
+
+    return json_decode( wp_remote_retrieve_body( $response ), true );
 }
 
-// Usage example
-$result = upload_csv_to_nalda(
+// Usage
+$result = nalda_upload_csv(
     'ABCD-1234-EFGH-5678',
-    'mysite.com',
+    '/tmp/products.csv',
     array(
-        'host' => 'sftp.nalda.com',
-        'port' => 22,
-        'username' => 'uploader',
-        'password' => 'secret',
-    ),
-    '/tmp/data.csv'
+        'host'     => 'sftp.nalda.com',
+        'port'     => 22,
+        'username' => 'myuser',
+        'password' => 'mypassword',
+    )
 );
 
-if ($result['body']['success']) {
-    echo "Upload successful! Request ID: " . $result['body']['data']['id'];
+if ( $result['success'] ) {
+    $request_id = $result['data']['id'];
+    // Save request ID for status checking
 } else {
-    echo "Upload failed: " . $result['body']['error']['message'];
+    $error_message = $result['error']['message'];
+    // Handle error
 }
 ```
 
-**Example Request (JavaScript/TypeScript):**
-
-```typescript
-async function uploadCsvToNalda(
-  licenseKey: string,
-  domain: string,
-  sftpCredentials: {
-    host: string;
-    port?: number;
-    username: string;
-    password: string;
-  },
-  csvFile: File
-): Promise<{ success: boolean; data?: any; error?: any }> {
-  const formData = new FormData();
-  formData.append('license_key', licenseKey);
-  formData.append('domain', domain);
-  formData.append('sftp_host', sftpCredentials.host);
-  formData.append('sftp_port', String(sftpCredentials.port ?? 22));
-  formData.append('sftp_username', sftpCredentials.username);
-  formData.append('sftp_password', sftpCredentials.password);
-  formData.append('csv_file', csvFile);
-
-  const response = await fetch(
-    'https://license-manager-jonakyds.vercel.app/api/v2/nalda/csv-upload',
-    {
-      method: 'POST',
-      body: formData,
-    }
-  );
-
-  return response.json();
-}
-```
-
-**Success Response (201):**
+#### Success Response (HTTP 201)
 
 ```json
 {
   "success": true,
   "data": {
-    "id": "unique_request_id",
+    "id": "abc123xyz",
     "license_id": "license_uuid",
-    "domain": "example.com",
-    "csv_file_key": "file_key_from_storage",
-    "csv_file_url": "https://storage.example.com/file.csv",
-    "csv_file_name": "data.csv",
+    "domain": "mysite.com",
+    "csv_file_key": "file_abc123",
+    "csv_file_url": "https://utfs.io/f/file_abc123.csv",
+    "csv_file_name": "products.csv",
     "csv_file_size": 1024567,
     "status": "pending",
     "created_at": "2026-01-04T12:00:00.000Z"
@@ -179,41 +167,100 @@ async function uploadCsvToNalda(
 }
 ```
 
-**Error Responses:**
+#### Error Responses
 
-| Status | Code | Description |
-|--------|------|-------------|
-| 400 | VALIDATION_ERROR | Invalid request parameters or file |
-| 403 | LICENSE_REVOKED | License has been revoked |
-| 403 | LICENSE_EXPIRED | License has expired |
-| 403 | DOMAIN_MISMATCH | Domain not activated for this license |
-| 404 | LICENSE_NOT_FOUND | Invalid license key |
-| 429 | RATE_LIMIT_EXCEEDED | Too many requests |
-| 500 | INTERNAL_ERROR | Server error |
+| HTTP Status | Error Code | Description |
+|-------------|------------|-------------|
+| 400 | `VALIDATION_ERROR` | Invalid parameters or file type |
+| 403 | `LICENSE_EXPIRED` | License has expired |
+| 403 | `LICENSE_REVOKED` | License has been revoked |
+| 403 | `DOMAIN_MISMATCH` | Domain not activated for this license |
+| 404 | `LICENSE_NOT_FOUND` | Invalid license key |
+| 429 | `RATE_LIMIT_EXCEEDED` | Too many requests (max 60/hour) |
+| 500 | `INTERNAL_ERROR` | Server error |
 
-### 2. List CSV Upload Requests
+---
 
-Lists CSV upload requests for a specific license and domain.
+### 2. List Upload Requests
 
-**Endpoint:** `GET /api/v2/nalda/csv-upload/list`
+Retrieve a paginated list of previous upload requests for status tracking.
 
-**Query Parameters:**
+```
+GET /api/v2/nalda/csv-upload/list
+```
+
+#### Query Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `license_key` | string | Yes | Valid license key |
-| `domain` | string | Yes | Domain to filter requests |
-| `page` | number | No | Page number (default: 1) |
-| `limit` | number | No | Items per page (default: 10, max: 100) |
-| `status` | string | No | Filter by status: pending, processing, processed, failed |
+| `license_key` | string | ✅ | License key |
+| `domain` | string | ✅ | WordPress site domain |
+| `page` | number | ❌ | Page number (default: 1) |
+| `limit` | number | ❌ | Items per page (default: 10, max: 100) |
+| `status` | string | ❌ | Filter: `pending`, `processing`, `processed`, `failed` |
 
-**Example Request:**
+#### PHP Example
 
+```php
+<?php
+/**
+ * List CSV upload requests from Nalda API
+ *
+ * @param string $license_key The license key
+ * @param int    $page Page number
+ * @param int    $limit Items per page
+ * @param string $status Optional status filter
+ * @return array API response
+ */
+function nalda_list_requests( $license_key, $page = 1, $limit = 10, $status = null ) {
+    $api_url = 'https://license-manager-jonakyds.vercel.app/api/v2/nalda/csv-upload/list';
+    $domain  = parse_url( home_url(), PHP_URL_HOST );
+
+    $query_args = array(
+        'license_key' => $license_key,
+        'domain'      => $domain,
+        'page'        => $page,
+        'limit'       => $limit,
+    );
+
+    if ( $status ) {
+        $query_args['status'] = $status;
+    }
+
+    $url = add_query_arg( $query_args, $api_url );
+
+    $response = wp_remote_get( $url, array( 'timeout' => 30 ) );
+
+    if ( is_wp_error( $response ) ) {
+        return array(
+            'success' => false,
+            'error'   => array( 'message' => $response->get_error_message() ),
+        );
+    }
+
+    return json_decode( wp_remote_retrieve_body( $response ), true );
+}
+
+// Usage
+$result = nalda_list_requests( 'ABCD-1234-EFGH-5678', 1, 20 );
+
+if ( $result['success'] ) {
+    foreach ( $result['data']['requests'] as $request ) {
+        echo sprintf(
+            "ID: %s | File: %s | Status: %s\n",
+            $request['id'],
+            $request['csv_file_name'],
+            $request['status']
+        );
+    }
+    
+    // Pagination info
+    $pagination = $result['data']['pagination'];
+    echo "Page {$pagination['page']} of {$pagination['total_pages']}";
+}
 ```
-GET /api/v2/nalda/csv-upload/list?license_key=XXXX-XXXX-XXXX-XXXX&domain=example.com&page=1&limit=10
-```
 
-**Success Response (200):**
+#### Success Response (HTTP 200)
 
 ```json
 {
@@ -221,75 +268,123 @@ GET /api/v2/nalda/csv-upload/list?license_key=XXXX-XXXX-XXXX-XXXX&domain=example
   "data": {
     "requests": [
       {
-        "id": "request_id_1",
-        "domain": "example.com",
-        "csv_file_key": "file_key_1",
-        "csv_file_url": "https://storage.example.com/file1.csv",
-        "csv_file_name": "data1.csv",
+        "id": "abc123xyz",
+        "domain": "mysite.com",
+        "csv_file_key": "file_abc123",
+        "csv_file_url": "https://utfs.io/f/file_abc123.csv",
+        "csv_file_name": "products.csv",
         "csv_file_size": 1024567,
         "status": "processed",
-        "processed_at": "2026-01-04T14:00:00.000Z",
+        "processed_at": "2026-01-04T14:30:00.000Z",
         "error_message": null,
         "created_at": "2026-01-04T12:00:00.000Z"
-      },
-      {
-        "id": "request_id_2",
-        "domain": "example.com",
-        "csv_file_key": "file_key_2",
-        "csv_file_url": "https://storage.example.com/file2.csv",
-        "csv_file_name": "data2.csv",
-        "csv_file_size": 2048000,
-        "status": "pending",
-        "processed_at": null,
-        "error_message": null,
-        "created_at": "2026-01-04T13:00:00.000Z"
       }
     ],
     "pagination": {
       "page": 1,
       "limit": 10,
-      "total": 2,
-      "total_pages": 1,
-      "has_next": false,
+      "total": 25,
+      "total_pages": 3,
+      "has_next": true,
       "has_prev": false
     }
   }
 }
 ```
 
+---
+
 ### 3. Validate SFTP Credentials
 
-Validates SFTP credentials by attempting a real connection to the server. Use this endpoint to verify credentials before creating a CSV upload request.
+Test SFTP credentials before uploading. Use this to provide immediate feedback to users.
 
-**Endpoint:** `POST /api/v2/nalda/sftp-validate`
+```
+POST /api/v2/nalda/sftp-validate
+Content-Type: application/json
+```
 
-**Request Body:**
+#### Request Body
 
 ```json
 {
   "license_key": "XXXX-XXXX-XXXX-XXXX",
-  "domain": "example.com",
+  "domain": "mysite.com",
   "hostname": "sftp.nalda.com",
   "port": 22,
-  "username": "user",
-  "password": "password"
+  "username": "myuser",
+  "password": "mypassword"
 }
 ```
 
-**Parameters:**
+#### Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `license_key` | string | Yes | Valid license key (format: XXXX-XXXX-XXXX-XXXX) |
-| `domain` | string | Yes | Domain activated for the license |
-| `hostname` | string | Yes | SFTP server hostname (must be a subdomain of nalda.com) |
-| `port` | number | No | SFTP port (default: 22, range: 1-65535) |
-| `username` | string | Yes | SFTP username (max 128 characters) |
-| `password` | string | Yes | SFTP password (max 256 characters) |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `license_key` | string | ✅ | License key |
+| `domain` | string | ✅ | WordPress site domain |
+| `hostname` | string | ✅ | SFTP hostname (must be *.nalda.com) |
+| `port` | number | ❌ | SFTP port (default: 22) |
+| `username` | string | ✅ | SFTP username |
+| `password` | string | ✅ | SFTP password |
 
-**Important:** The `hostname` must be a subdomain of `nalda.com` (e.g., `sftp.nalda.com`, `server1.nalda.com`).
+#### PHP Example
 
-**Success Response (200):**
+```php
+<?php
+/**
+ * Validate SFTP credentials with Nalda API
+ *
+ * @param string $license_key The license key
+ * @param array  $sftp_config SFTP configuration
+ * @return array API response
+ */
+function nalda_validate_sftp( $license_key, $sftp_config ) {
+    $api_url = 'https://license-manager-jonakyds.vercel.app/api/v2/nalda/sftp-validate';
+    $domain  = parse_url( home_url(), PHP_URL_HOST );
+
+    $response = wp_remote_post( $api_url, array(
+        'headers' => array( 'Content-Type' => 'application/json' ),
+        'body'    => wp_json_encode( array(
+            'license_key' => $license_key,
+            'domain'      => $domain,
+            'hostname'    => $sftp_config['hostname'],
+            'port'        => (int) ( $sftp_config['port'] ?? 22 ),
+            'username'    => $sftp_config['username'],
+            'password'    => $sftp_config['password'],
+        ) ),
+        'timeout' => 30,
+    ) );
+
+    if ( is_wp_error( $response ) ) {
+        return array(
+            'success' => false,
+            'error'   => array( 'message' => $response->get_error_message() ),
+        );
+    }
+
+    return json_decode( wp_remote_retrieve_body( $response ), true );
+}
+
+// Usage
+$result = nalda_validate_sftp(
+    'ABCD-1234-EFGH-5678',
+    array(
+        'hostname' => 'sftp.nalda.com',
+        'port'     => 22,
+        'username' => 'myuser',
+        'password' => 'mypassword',
+    )
+);
+
+if ( $result['success'] ) {
+    echo 'SFTP connection successful!';
+    echo 'Current directory: ' . $result['data']['serverInfo']['currentDirectory'];
+} else {
+    echo 'SFTP connection failed: ' . $result['error']['message'];
+}
+```
+
+#### Success Response (HTTP 200)
 
 ```json
 {
@@ -297,308 +392,261 @@ Validates SFTP credentials by attempting a real connection to the server. Use th
   "data": {
     "hostname": "sftp.nalda.com",
     "port": 22,
-    "username": "user",
+    "username": "myuser",
     "connected": true,
     "serverInfo": {
-      "currentDirectory": "/home/user"
+      "currentDirectory": "/home/myuser"
     }
   },
   "message": "SFTP credentials are valid"
 }
 ```
 
-**Error Responses:**
+#### SFTP Error Codes
 
-| Status | Code | Description |
-|--------|------|-------------|
-| 400 | VALIDATION_ERROR | Invalid request parameters |
-| 400 | HOST_NOT_FOUND | Hostname could not be resolved |
-| 400 | CONNECTION_REFUSED | Connection refused by server |
-| 400 | HOST_UNREACHABLE | Host is unreachable |
-| 400 | NETWORK_UNREACHABLE | Network is unreachable |
-| 400 | CONNECTION_RESET | Connection was reset by server |
-| 400 | PROTOCOL_ERROR | SSH handshake failed |
-| 400 | CONNECTION_ERROR | Generic connection failure |
-| 401 | AUTH_FAILED | Invalid username or password |
-| 403 | LICENSE_REVOKED | License has been revoked |
-| 403 | LICENSE_EXPIRED | License has expired |
-| 403 | DOMAIN_MISMATCH | Domain not activated for this license |
-| 404 | LICENSE_NOT_FOUND | Invalid license key |
-| 408 | CONNECTION_TIMEOUT | Connection timed out (10 second limit) |
-| 429 | RATE_LIMIT_EXCEEDED | Too many requests |
-| 500 | INTERNAL_ERROR | Server error |
+| HTTP Status | Error Code | Description |
+|-------------|------------|-------------|
+| 400 | `HOST_NOT_FOUND` | Hostname could not be resolved |
+| 400 | `CONNECTION_REFUSED` | Connection refused by server |
+| 400 | `HOST_UNREACHABLE` | Host is unreachable |
+| 400 | `CONNECTION_RESET` | Connection was reset |
+| 400 | `PROTOCOL_ERROR` | SSH handshake failed |
+| 401 | `AUTH_FAILED` | Invalid username or password |
+| 408 | `CONNECTION_TIMEOUT` | Connection timed out (10s limit) |
 
-**Example Usage (PHP/WordPress):**
+---
 
-```php
-<?php
-function validate_sftp_credentials($license_key, $domain, $sftp_config) {
-    $api_url = 'https://license-manager-jonakyds.vercel.app/api/v2/nalda/sftp-validate';
-    
-    $response = wp_remote_post($api_url, array(
-        'headers' => array('Content-Type' => 'application/json'),
-        'body' => json_encode(array(
-            'license_key' => $license_key,
-            'domain' => $domain,
-            'hostname' => $sftp_config['hostname'],
-            'port' => $sftp_config['port'] ?? 22,
-            'username' => $sftp_config['username'],
-            'password' => $sftp_config['password'],
-        )),
-        'timeout' => 30,
-    ));
-    
-    if (is_wp_error($response)) {
-        return array('success' => false, 'error' => $response->get_error_message());
-    }
-    
-    return json_decode(wp_remote_retrieve_body($response), true);
-}
-```
-
-## Security Features
-
-### License Validation
-
-- All requests require a valid license key and domain combination
-- The license must be active (not revoked or expired)
-- The domain must be activated for the license
-- License expiration is checked against the current date
-
-### Rate Limiting
-
-- General rate limit: 60 requests per hour per IP
-- Rate limit headers are included in responses:
-  - `X-RateLimit-Limit`: Maximum requests allowed
-  - `X-RateLimit-Remaining`: Requests remaining
-  - `X-RateLimit-Reset`: Unix timestamp when limit resets
-
-### File Validation
-
-- Maximum file size: 16MB
-- Allowed file type: CSV (text/csv)
-- Files are stored securely on UploadThing
-
-### SFTP Credentials
-
-- SFTP credentials are stored in the database
-- Consider encrypting sensitive credentials in production
-- Credentials are only used during processing, not exposed in list responses
-
-## Status Values
+## Request Status Values
 
 | Status | Description |
 |--------|-------------|
-| `pending` | Request created, awaiting processing |
+| `pending` | Request created, waiting in queue |
 | `processing` | Currently being processed |
-| `processed` | Successfully processed |
-| `failed` | Processing failed (check error_message) |
+| `processed` | Successfully completed |
+| `failed` | Failed (check `error_message` field) |
 
-## Error Handling
+---
 
-All error responses follow this format:
+## Error Response Format
+
+All error responses follow this structure:
 
 ```json
 {
   "success": false,
   "error": {
     "code": "ERROR_CODE",
-    "message": "Human-readable error message",
+    "message": "Human-readable error description",
     "details": {
-      "field_name": ["Validation error message"]
+      "field_name": ["Validation error for this field"]
     }
   }
 }
 ```
 
-## Complete Flow Example
+---
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        COMPLETE UPLOAD FLOW                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  1. VALIDATE SFTP CREDENTIALS (recommended)                              │
-│     Plugin → API: license_key + domain + SFTP credentials                │
-│     API validates license, then tests SFTP connection                    │
-│     API → Plugin: success/failure with error details                     │
-│                                                                          │
-│  2. UPLOAD CSV FILE                                                      │
-│     Plugin → API: license_key + domain + SFTP creds + CSV file           │
-│     API validates license, uploads file to storage                       │
-│     API stores request in database                                       │
-│     API → Plugin: request ID + file details                              │
-│                                                                          │
-│  3. CHECK STATUS (optional)                                              │
-│     Plugin → API: license_key + domain                                   │
-│     API → Plugin: list of requests with status                           │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+## Rate Limiting
 
-### Complete WordPress Plugin Example
+- **Limit:** 60 requests per hour per IP address
+- **Headers included in responses:**
+  - `X-RateLimit-Limit` - Maximum requests allowed
+  - `X-RateLimit-Remaining` - Requests remaining
+  - `X-RateLimit-Reset` - Unix timestamp when limit resets
+
+---
+
+## Complete Integration Example
+
+Here's a complete PHP class for your WordPress plugin:
 
 ```php
 <?php
 /**
- * Nalda CSV Upload Integration for WordPress
+ * Nalda API Client for WordPress
  */
+class Nalda_API_Client {
 
-class Nalda_CSV_Uploader {
-    private $api_base = 'https://license-manager-jonakyds.vercel.app/api/v2/nalda';
+    private const API_BASE = 'https://license-manager-jonakyds.vercel.app/api/v2/nalda';
+
     private $license_key;
     private $domain;
-    
-    public function __construct($license_key) {
+
+    public function __construct( $license_key ) {
         $this->license_key = $license_key;
-        $this->domain = parse_url(home_url(), PHP_URL_HOST);
+        $this->domain      = parse_url( home_url(), PHP_URL_HOST );
     }
-    
+
     /**
-     * Validate SFTP credentials before uploading
+     * Validate SFTP credentials
      */
-    public function validate_sftp($hostname, $port, $username, $password) {
-        $response = wp_remote_post($this->api_base . '/sftp-validate', array(
-            'headers' => array('Content-Type' => 'application/json'),
-            'body' => json_encode(array(
-                'license_key' => $this->license_key,
-                'domain' => $this->domain,
-                'hostname' => $hostname,
-                'port' => (int) $port,
-                'username' => $username,
-                'password' => $password,
-            )),
-            'timeout' => 30,
-        ));
-        
-        if (is_wp_error($response)) {
-            return array(
-                'success' => false,
-                'error' => array('message' => $response->get_error_message())
-            );
-        }
-        
-        return json_decode(wp_remote_retrieve_body($response), true);
-    }
-    
-    /**
-     * Upload CSV file with SFTP credentials
-     */
-    public function upload_csv($csv_file_path, $sftp_host, $sftp_username, $sftp_password, $sftp_port = 22) {
-        // Check if file exists
-        if (!file_exists($csv_file_path)) {
-            return array(
-                'success' => false,
-                'error' => array('message' => 'CSV file not found')
-            );
-        }
-        
-        // Prepare multipart request
-        $boundary = wp_generate_uuid4();
-        $body = '';
-        
-        // Add form fields
-        $fields = array(
+    public function validate_sftp( $hostname, $username, $password, $port = 22 ) {
+        return $this->post( '/sftp-validate', array(
             'license_key' => $this->license_key,
-            'domain' => $this->domain,
-            'sftp_host' => $sftp_host,
-            'sftp_port' => (string) $sftp_port,
+            'domain'      => $this->domain,
+            'hostname'    => $hostname,
+            'port'        => (int) $port,
+            'username'    => $username,
+            'password'    => $password,
+        ) );
+    }
+
+    /**
+     * Upload CSV file
+     */
+    public function upload_csv( $file_path, $sftp_host, $sftp_username, $sftp_password, $sftp_port = 22 ) {
+        if ( ! file_exists( $file_path ) ) {
+            return array(
+                'success' => false,
+                'error'   => array( 'message' => 'File not found: ' . $file_path ),
+            );
+        }
+
+        $boundary = wp_generate_uuid4();
+        $body     = $this->build_multipart_body( $boundary, array(
+            'license_key'   => $this->license_key,
+            'domain'        => $this->domain,
+            'sftp_host'     => $sftp_host,
+            'sftp_port'     => (string) $sftp_port,
             'sftp_username' => $sftp_username,
             'sftp_password' => $sftp_password,
+        ), $file_path );
+
+        $response = wp_remote_post( self::API_BASE . '/csv-upload', array(
+            'headers' => array( 'Content-Type' => "multipart/form-data; boundary={$boundary}" ),
+            'body'    => $body,
+            'timeout' => 60,
+        ) );
+
+        return $this->handle_response( $response );
+    }
+
+    /**
+     * List upload requests
+     */
+    public function list_requests( $page = 1, $limit = 10, $status = null ) {
+        $args = array(
+            'license_key' => $this->license_key,
+            'domain'      => $this->domain,
+            'page'        => $page,
+            'limit'       => $limit,
         );
-        
-        foreach ($fields as $name => $value) {
+
+        if ( $status ) {
+            $args['status'] = $status;
+        }
+
+        $url      = add_query_arg( $args, self::API_BASE . '/csv-upload/list' );
+        $response = wp_remote_get( $url, array( 'timeout' => 30 ) );
+
+        return $this->handle_response( $response );
+    }
+
+    /**
+     * Get a specific request by ID
+     */
+    public function get_request_status( $request_id ) {
+        $result = $this->list_requests( 1, 100 );
+
+        if ( ! $result['success'] ) {
+            return $result;
+        }
+
+        foreach ( $result['data']['requests'] as $request ) {
+            if ( $request['id'] === $request_id ) {
+                return array( 'success' => true, 'data' => $request );
+            }
+        }
+
+        return array(
+            'success' => false,
+            'error'   => array( 'message' => 'Request not found' ),
+        );
+    }
+
+    private function post( $endpoint, $data ) {
+        $response = wp_remote_post( self::API_BASE . $endpoint, array(
+            'headers' => array( 'Content-Type' => 'application/json' ),
+            'body'    => wp_json_encode( $data ),
+            'timeout' => 30,
+        ) );
+
+        return $this->handle_response( $response );
+    }
+
+    private function handle_response( $response ) {
+        if ( is_wp_error( $response ) ) {
+            return array(
+                'success' => false,
+                'error'   => array( 'message' => $response->get_error_message() ),
+            );
+        }
+
+        return json_decode( wp_remote_retrieve_body( $response ), true );
+    }
+
+    private function build_multipart_body( $boundary, $fields, $file_path ) {
+        $body = '';
+
+        foreach ( $fields as $name => $value ) {
             $body .= "--{$boundary}\r\n";
             $body .= "Content-Disposition: form-data; name=\"{$name}\"\r\n\r\n";
             $body .= "{$value}\r\n";
         }
-        
-        // Add file
-        $file_content = file_get_contents($csv_file_path);
-        $file_name = basename($csv_file_path);
+
+        $file_name    = basename( $file_path );
+        $file_content = file_get_contents( $file_path );
+
         $body .= "--{$boundary}\r\n";
         $body .= "Content-Disposition: form-data; name=\"csv_file\"; filename=\"{$file_name}\"\r\n";
         $body .= "Content-Type: text/csv\r\n\r\n";
         $body .= "{$file_content}\r\n";
         $body .= "--{$boundary}--\r\n";
-        
-        $response = wp_remote_post($this->api_base . '/csv-upload', array(
-            'headers' => array(
-                'Content-Type' => "multipart/form-data; boundary={$boundary}",
-            ),
-            'body' => $body,
-            'timeout' => 60,
-        ));
-        
-        if (is_wp_error($response)) {
-            return array(
-                'success' => false,
-                'error' => array('message' => $response->get_error_message())
-            );
-        }
-        
-        return json_decode(wp_remote_retrieve_body($response), true);
-    }
-    
-    /**
-     * List upload requests
-     */
-    public function list_requests($page = 1, $limit = 10, $status = null) {
-        $url = add_query_arg(array(
-            'license_key' => $this->license_key,
-            'domain' => $this->domain,
-            'page' => $page,
-            'limit' => $limit,
-            'status' => $status,
-        ), $this->api_base . '/csv-upload/list');
-        
-        $response = wp_remote_get($url, array('timeout' => 30));
-        
-        if (is_wp_error($response)) {
-            return array(
-                'success' => false,
-                'error' => array('message' => $response->get_error_message())
-            );
-        }
-        
-        return json_decode(wp_remote_retrieve_body($response), true);
+
+        return $body;
     }
 }
+```
 
-// Usage example
-$uploader = new Nalda_CSV_Uploader('ABCD-1234-EFGH-5678');
+### Usage Example
 
-// Step 1: Validate SFTP credentials
-$sftp_result = $uploader->validate_sftp('sftp.nalda.com', 22, 'user', 'password');
-if (!$sftp_result['success']) {
-    error_log('SFTP validation failed: ' . $sftp_result['error']['message']);
-    return;
+```php
+<?php
+// Initialize client with license key
+$nalda = new Nalda_API_Client( 'ABCD-1234-EFGH-5678' );
+
+// Step 1: Validate SFTP credentials (optional but recommended)
+$sftp_result = $nalda->validate_sftp( 'sftp.nalda.com', 'user', 'pass', 22 );
+
+if ( ! $sftp_result['success'] ) {
+    wp_die( 'SFTP Error: ' . $sftp_result['error']['message'] );
 }
 
 // Step 2: Upload CSV file
-$upload_result = $uploader->upload_csv(
-    '/tmp/data.csv',
+$upload_result = $nalda->upload_csv(
+    '/path/to/products.csv',
     'sftp.nalda.com',
     'user',
-    'password',
+    'pass',
     22
 );
 
-if ($upload_result['success']) {
-    echo 'Upload successful! Request ID: ' . $upload_result['data']['id'];
-    echo 'File URL: ' . $upload_result['data']['csv_file_url'];
+if ( $upload_result['success'] ) {
+    $request_id = $upload_result['data']['id'];
+    update_option( 'nalda_last_request_id', $request_id );
+    echo 'Upload successful! Request ID: ' . $request_id;
 } else {
     echo 'Upload failed: ' . $upload_result['error']['message'];
 }
 
-// Step 3: Check status
-$list_result = $uploader->list_requests(1, 10);
-foreach ($list_result['data']['requests'] as $request) {
-    echo sprintf(
-        "Request %s: %s (%s)\n",
-        $request['id'],
-        $request['csv_file_name'],
-        $request['status']
-    );
+// Step 3: Check status later
+$status = $nalda->get_request_status( $request_id );
+
+if ( $status['success'] ) {
+    echo 'Status: ' . $status['data']['status'];
+    
+    if ( $status['data']['status'] === 'failed' ) {
+        echo 'Error: ' . $status['data']['error_message'];
+    }
 }
 ```
