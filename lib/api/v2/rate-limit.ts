@@ -83,6 +83,26 @@ function getActivationLimiter(): Ratelimit | null {
 }
 
 /**
+ * Rate limiter for list requests (higher limit for read operations).
+ * Limit: 60 requests per minute per IP address.
+ */
+let listLimiter: Ratelimit | null = null;
+function getListLimiter(): Ratelimit | null {
+  const redisClient = getRedis();
+  if (!redisClient) return null;
+
+  if (!listLimiter) {
+    listLimiter = new Ratelimit({
+      redis: redisClient,
+      limiter: Ratelimit.slidingWindow(60, "1 m"),
+      prefix: "license-api:list",
+      analytics: true,
+    });
+  }
+  return listLimiter;
+}
+
+/**
  * Rate limiter for failed attempts (brute force protection).
  * Limit: 60 failed attempts per hour per license key.
  */
@@ -106,7 +126,7 @@ function getFailedAttemptLimiter(): Ratelimit | null {
 // Rate Limit Types
 // ============================================================================
 
-export type RateLimitType = "general" | "activation" | "failed";
+export type RateLimitType = "general" | "activation" | "failed" | "list";
 
 export interface RateLimitResult {
   success: boolean;
@@ -152,6 +172,9 @@ export async function checkRateLimit(
       break;
     case "failed":
       limiter = getFailedAttemptLimiter();
+      break;
+    case "list":
+      limiter = getListLimiter();
       break;
     default:
       limiter = getGeneralLimiter();

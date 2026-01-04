@@ -47,9 +47,9 @@ export async function GET(request: NextRequest) {
   const endpoint = "/api/v2/nalda/csv-upload/list";
 
   try {
-    // Check rate limit
+    // Check rate limit (higher limit for list operations: 60/second)
     const clientIp = getClientIdentifier(request);
-    const rateLimitResult = await checkRateLimit(clientIp, "general");
+    const rateLimitResult = await checkRateLimit(clientIp, "list");
 
     if (rateLimitResult && !rateLimitResult.success) {
       return rateLimitExceededResponse(rateLimitResult);
