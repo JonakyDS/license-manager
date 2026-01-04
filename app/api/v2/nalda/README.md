@@ -34,7 +34,7 @@ The license must be active, not expired, and activated for the requesting domain
 
 ### 1. Upload CSV File
 
-Upload a CSV file along with SFTP credentials for processing.
+Upload a CSV file along with SFTP credentials. The file is uploaded **directly to your SFTP server** and also stored in cloud storage for backup - both uploads happen in parallel for speed.
 
 ```
 POST /api/v2/nalda/csv-upload
@@ -160,12 +160,14 @@ if ( $result['success'] ) {
     "csv_file_url": "https://utfs.io/f/file_abc123.csv",
     "csv_file_name": "products.csv",
     "csv_file_size": 1024567,
-    "status": "pending",
+    "status": "processed",
     "created_at": "2026-01-04T12:00:00.000Z"
   },
-  "message": "CSV upload request created successfully"
+  "message": "CSV file uploaded successfully to storage and SFTP server"
 }
 ```
+
+> **Note:** The `status` is `"processed"` because the file is immediately uploaded to your SFTP server. No background processing is needed.
 
 #### Error Responses
 
@@ -177,7 +179,7 @@ if ( $result['success'] ) {
 | 403 | `DOMAIN_MISMATCH` | Domain not activated for this license |
 | 404 | `LICENSE_NOT_FOUND` | Invalid license key |
 | 429 | `RATE_LIMIT_EXCEEDED` | Too many requests (max 60/hour) |
-| 500 | `INTERNAL_ERROR` | Server error |
+| 500 | `INTERNAL_ERROR` | Server error (includes SFTP connection failures) |
 
 ---
 
