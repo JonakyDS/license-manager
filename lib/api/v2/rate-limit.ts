@@ -44,7 +44,7 @@ function getRedis(): Redis | null {
 
 /**
  * Rate limiter for general API requests.
- * Limit: 60 requests per hour per IP address.
+ * Limit: 60 requests per minute per IP address.
  */
 let generalLimiter: Ratelimit | null = null;
 function getGeneralLimiter(): Ratelimit | null {
@@ -54,7 +54,7 @@ function getGeneralLimiter(): Ratelimit | null {
   if (!generalLimiter) {
     generalLimiter = new Ratelimit({
       redis: redisClient,
-      limiter: Ratelimit.slidingWindow(60, "1 h"),
+      limiter: Ratelimit.slidingWindow(60, "1 m"),
       prefix: "license-api:general",
       analytics: true,
     });
@@ -64,7 +64,7 @@ function getGeneralLimiter(): Ratelimit | null {
 
 /**
  * Rate limiter for activation requests.
- * Limit: 60 activations per hour per IP address.
+ * Limit: 60 activations per minute per IP address.
  */
 let activationLimiter: Ratelimit | null = null;
 function getActivationLimiter(): Ratelimit | null {
@@ -74,7 +74,7 @@ function getActivationLimiter(): Ratelimit | null {
   if (!activationLimiter) {
     activationLimiter = new Ratelimit({
       redis: redisClient,
-      limiter: Ratelimit.slidingWindow(60, "1 h"),
+      limiter: Ratelimit.slidingWindow(60, "1 m"),
       prefix: "license-api:activation",
       analytics: true,
     });
@@ -83,28 +83,8 @@ function getActivationLimiter(): Ratelimit | null {
 }
 
 /**
- * Rate limiter for list requests (higher limit for read operations).
- * Limit: 60 requests per minute per IP address.
- */
-let listLimiter: Ratelimit | null = null;
-function getListLimiter(): Ratelimit | null {
-  const redisClient = getRedis();
-  if (!redisClient) return null;
-
-  if (!listLimiter) {
-    listLimiter = new Ratelimit({
-      redis: redisClient,
-      limiter: Ratelimit.slidingWindow(60, "1 m"),
-      prefix: "license-api:list",
-      analytics: true,
-    });
-  }
-  return listLimiter;
-}
-
-/**
  * Rate limiter for failed attempts (brute force protection).
- * Limit: 60 failed attempts per hour per license key.
+ * Limit: 60 failed attempts per minute per license key.
  */
 let failedAttemptLimiter: Ratelimit | null = null;
 function getFailedAttemptLimiter(): Ratelimit | null {
@@ -114,7 +94,7 @@ function getFailedAttemptLimiter(): Ratelimit | null {
   if (!failedAttemptLimiter) {
     failedAttemptLimiter = new Ratelimit({
       redis: redisClient,
-      limiter: Ratelimit.slidingWindow(60, "1 h"),
+      limiter: Ratelimit.slidingWindow(60, "1 m"),
       prefix: "license-api:failed",
       analytics: true,
     });
@@ -126,7 +106,7 @@ function getFailedAttemptLimiter(): Ratelimit | null {
 // Rate Limit Types
 // ============================================================================
 
-export type RateLimitType = "general" | "activation" | "failed" | "list";
+export type RateLimitType = "general" | "activation" | "failed";
 
 export interface RateLimitResult {
   success: boolean;
@@ -172,9 +152,6 @@ export async function checkRateLimit(
       break;
     case "failed":
       limiter = getFailedAttemptLimiter();
-      break;
-    case "list":
-      limiter = getListLimiter();
       break;
     default:
       limiter = getGeneralLimiter();
