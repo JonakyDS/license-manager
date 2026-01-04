@@ -1,7 +1,7 @@
 /**
  * License Status API Endpoint
  *
- * POST /api/v2/licenses/status
+ * POST /api/v2/licences/status
  *
  * Returns complete information about a license without requiring a domain.
  * Useful for building a "License Info" panel in plugin/theme settings.
@@ -41,7 +41,7 @@ import {
 import type { StatusResponseData } from "@/lib/api/v2/types";
 
 export async function POST(request: NextRequest) {
-  const endpoint = "/api/v2/licenses/status";
+  const endpoint = "/api/v2/licences/status";
 
   try {
     // Check rate limit

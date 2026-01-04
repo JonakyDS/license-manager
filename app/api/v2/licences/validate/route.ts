@@ -1,7 +1,7 @@
 /**
  * License Validation API Endpoint
  *
- * POST /api/v2/licenses/validate
+ * POST /api/v2/licences/validate
  *
  * Validates whether a license is currently valid and properly activated
  * on the requesting domain. This is the core "gatekeeper" for premium features.
@@ -38,7 +38,7 @@ import {
 import type { ValidateResponseData } from "@/lib/api/v2/types";
 
 export async function POST(request: NextRequest) {
-  const endpoint = "/api/v2/licenses/validate";
+  const endpoint = "/api/v2/licences/validate";
 
   try {
     // Check rate limit

@@ -1,7 +1,7 @@
 /**
  * License Activation API Endpoint
  *
- * POST /api/v2/licenses/activate
+ * POST /api/v2/licences/activate
  *
  * Activates a license key on a specific domain. Handles:
  * - First-time activation (sets activated_at and calculates expires_at)
@@ -36,7 +36,7 @@ import {
 import type { ActivateResponseData } from "@/lib/api/v2/types";
 
 export async function POST(request: NextRequest) {
-  const endpoint = "/api/v2/licenses/activate";
+  const endpoint = "/api/v2/licences/activate";
 
   try {
     // Check rate limit (activation has stricter limits)

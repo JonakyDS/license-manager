@@ -1,7 +1,7 @@
 /**
  * License Deactivation API Endpoint
  *
- * POST /api/v2/licenses/deactivate
+ * POST /api/v2/licences/deactivate
  *
  * Removes a license from its current domain. Used when:
  * - Moving site to a new server
@@ -37,7 +37,7 @@ import {
 import type { DeactivateResponseData } from "@/lib/api/v2/types";
 
 export async function POST(request: NextRequest) {
-  const endpoint = "/api/v2/licenses/deactivate";
+  const endpoint = "/api/v2/licences/deactivate";
 
   try {
     // Check rate limit
