@@ -28,6 +28,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   HomeIcon,
+  FileUpIcon,
 } from "lucide-react";
 import type { NavItem, NavSection } from "@/lib/types/admin";
 
@@ -58,6 +59,11 @@ const navSections: NavSection[] = [
         title: "Licenses",
         href: "/admin/licenses",
         icon: KeyIcon,
+      },
+      {
+        title: "CSV Uploads",
+        href: "/admin/csv-uploads",
+        icon: FileUpIcon,
       },
     ],
   },

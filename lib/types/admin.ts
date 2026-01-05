@@ -99,6 +99,42 @@ export interface LicenseTableData {
   };
 }
 
+// CSV Upload specific types
+export interface CsvUploadFilters extends FilterConfig {
+  status?: string;
+  licenseId?: string;
+}
+
+export interface CsvUploadTableData {
+  id: string;
+  licenseId: string;
+  domain: string;
+  sftpHost: string;
+  sftpPort: number;
+  sftpUsername: string;
+  sftpPassword: string;
+  csvFileKey: string;
+  csvFileUrl: string;
+  csvFileName: string;
+  csvFileSize: number;
+  status: "pending" | "processing" | "processed" | "failed";
+  processedAt: Date | null;
+  errorMessage: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  license?: {
+    id: string;
+    licenseKey: string;
+    customerName: string | null;
+    customerEmail: string | null;
+    product?: {
+      id: string;
+      name: string;
+      slug: string;
+    };
+  };
+}
+
 // Admin navigation types
 export interface NavItem {
   title: string;

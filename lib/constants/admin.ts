@@ -32,3 +32,10 @@ export const LICENSE_STATUS = [
   { value: "expired", label: "Expired" },
   { value: "revoked", label: "Revoked" },
 ] as const;
+
+export const CSV_UPLOAD_STATUS = [
+  { value: "pending", label: "Pending" },
+  { value: "processing", label: "Processing" },
+  { value: "processed", label: "Processed" },
+  { value: "failed", label: "Failed" },
+] as const;
