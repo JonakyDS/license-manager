@@ -417,6 +417,10 @@ export default function WooCommerceNaldaSyncPage() {
                     <CheckCircleIcon className="size-5 text-green-500" />
                     <span>Email support</span>
                   </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircleIcon className="size-5 text-green-500" />
+                    <span>No setup fees</span>
+                  </li>
                 </ul>
                 <Button className="w-full" size="lg" variant="outline">
                   Get 3-Day License
