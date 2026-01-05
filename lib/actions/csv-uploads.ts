@@ -106,9 +106,7 @@ export async function getCsvUploads(
   // Get unique product IDs from licenses
   const productIds = [
     ...new Set(
-      csvUploadsRaw
-        .map((u) => u.productId)
-        .filter((id): id is string => !!id)
+      csvUploadsRaw.map((u) => u.productId).filter((id): id is string => !!id)
     ),
   ];
 
