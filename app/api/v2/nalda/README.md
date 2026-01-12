@@ -208,7 +208,7 @@ GET /api/v2/nalda/csv-upload/list
 | `page` | number | ❌ | Page number (default: 1) |
 | `limit` | number | ❌ | Items per page (default: 10, max: 100) |
 | `status` | string | ❌ | Filter: `pending`, `processing`, `processed`, `failed` |
-| `csv_type` | string | ✅ | CSV type: `"orders"` or `"products"` |
+| `csv_type` | string | ❌ | Filter by CSV type: `"orders"` or `"products"` |
 
 #### PHP Example
 
@@ -218,26 +218,29 @@ GET /api/v2/nalda/csv-upload/list
  * List CSV upload requests from Nalda API
  *
  * @param string $license_key The license key
- * @param string $csv_type CSV type ('orders' or 'products')
  * @param int    $page Page number
  * @param int    $limit Items per page
  * @param string $status Optional status filter
+ * @param string $csv_type Optional CSV type filter ('orders' or 'products')
  * @return array API response
  */
-function nalda_list_requests( $license_key, $csv_type, $page = 1, $limit = 10, $status = null ) {
+function nalda_list_requests( $license_key, $page = 1, $limit = 10, $status = null, $csv_type = null ) {
     $api_url = 'https://license-manager-jonakyds.vercel.app/api/v2/nalda/csv-upload/list';
     $domain  = parse_url( home_url(), PHP_URL_HOST );
 
     $query_args = array(
         'license_key' => $license_key,
         'domain'      => $domain,
-        'csv_type'    => $csv_type,
         'page'        => $page,
         'limit'       => $limit,
     );
 
     if ( $status ) {
         $query_args['status'] = $status;
+    }
+
+    if ( $csv_type ) {
+        $query_args['csv_type'] = $csv_type;
     }
 
     $url = add_query_arg( $query_args, $api_url );
@@ -254,8 +257,11 @@ function nalda_list_requests( $license_key, $csv_type, $page = 1, $limit = 10, $
     return json_decode( wp_remote_retrieve_body( $response ), true );
 }
 
-// Usage
-$result = nalda_list_requests( 'ABCD-1234-EFGH-5678', 'products', 1, 20 );
+// Usage - list all requests
+$result = nalda_list_requests( 'ABCD-1234-EFGH-5678', 1, 20 );
+
+// Usage - filter by csv_type
+$result = nalda_list_requests( 'ABCD-1234-EFGH-5678', 1, 20, null, 'products' );
 
 if ( $result['success'] ) {
     foreach ( $result['data']['requests'] as $request ) {
@@ -539,17 +545,20 @@ class Nalda_API_Client {
     /**
      * List upload requests
      */
-    public function list_requests( $csv_type, $page = 1, $limit = 10, $status = null ) {
+    public function list_requests( $page = 1, $limit = 10, $status = null, $csv_type = null ) {
         $args = array(
             'license_key' => $this->license_key,
             'domain'      => $this->domain,
-            'csv_type'    => $csv_type,
             'page'        => $page,
             'limit'       => $limit,
         );
 
         if ( $status ) {
             $args['status'] = $status;
+        }
+
+        if ( $csv_type ) {
+            $args['csv_type'] = $csv_type;
         }
 
         $url      = add_query_arg( $args, self::API_BASE . '/csv-upload/list' );
@@ -562,7 +571,7 @@ class Nalda_API_Client {
      * Get a specific request by ID
      */
     public function get_request_status( $request_id ) {
-        $result = $this->list_requests( 1, 100 );
+        $result = $this->list_requests( 1, 100, null, null );
 
         if ( ! $result['success'] ) {
             return $result;
