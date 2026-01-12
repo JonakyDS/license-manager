@@ -202,7 +202,7 @@ function isValidFileSize(file: File): boolean {
 /** SFTP folder mapping for CSV types */
 const SFTP_FOLDERS: Record<CsvType, string> = {
   orders: "/order-status",
-  products: "/products",
+  products: "/",
 };
 
 async function uploadToSftp(
