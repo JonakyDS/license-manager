@@ -213,7 +213,9 @@ async function validateSftpConnection(
 export async function POST(
   request: NextRequest
 ): Promise<
-  NextResponse<ApiSuccessResponse<SftpValidationResult> | ApiErrorResponse>
+  NextResponse<
+    ApiSuccessResponse<SftpValidationResponseData> | ApiErrorResponse
+  >
 > {
   const startTime = Date.now();
 
@@ -329,7 +331,7 @@ export async function POST(
       duration: `${duration}ms`,
     });
 
-    const response = successResponse<SftpValidationResult>(
+    const response = successResponse<SftpValidationResponseData>(
       {
         hostname,
         port,
@@ -345,7 +347,7 @@ export async function POST(
     // Add rate limit headers to response
     if (rateLimitResult) {
       return addRateLimitHeaders(response, rateLimitResult) as NextResponse<
-        ApiSuccessResponse<SftpValidationResult>
+        ApiSuccessResponse<SftpValidationResponseData>
       >;
     }
 
