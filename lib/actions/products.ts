@@ -12,6 +12,7 @@ import type {
   PaginationConfig,
 } from "@/lib/types/admin";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/admin";
+import { requireAdmin } from "./auth";
 
 // Validation schemas
 const createProductSchema = z.object({
@@ -50,120 +51,150 @@ export async function getProducts(
   pageSize: number = DEFAULT_PAGE_SIZE,
   sortColumn: string = "createdAt",
   sortDirection: "asc" | "desc" = "desc"
-): Promise<{
-  products: ProductTableData[];
-  pagination: PaginationConfig;
-}> {
-  const offset = (page - 1) * pageSize;
-
-  // Build where conditions
-  const conditions = [];
-
-  if (filters.search) {
-    conditions.push(
-      or(
-        ilike(product.name, `%${filters.search}%`),
-        ilike(product.slug, `%${filters.search}%`),
-        ilike(product.description, `%${filters.search}%`)
-      )
-    );
+): Promise<
+  ActionResult<{
+    products: ProductTableData[];
+    pagination: PaginationConfig;
+  }>
+> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
   }
 
-  if (filters.type && filters.type !== "all") {
-    conditions.push(
-      eq(
-        product.type,
-        filters.type as "plugin" | "theme" | "source_code" | "other"
-      )
-    );
-  }
+  try {
+    const offset = (page - 1) * pageSize;
 
-  if (filters.status === "active") {
-    conditions.push(eq(product.active, true));
-  } else if (filters.status === "inactive") {
-    conditions.push(eq(product.active, false));
-  }
+    // Build where conditions
+    const conditions = [];
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    if (filters.search) {
+      conditions.push(
+        or(
+          ilike(product.name, `%${filters.search}%`),
+          ilike(product.slug, `%${filters.search}%`),
+          ilike(product.description, `%${filters.search}%`)
+        )
+      );
+    }
 
-  // Get sort order
-  const sortOrder = sortDirection === "asc" ? asc : desc;
-  const sortField =
-    sortColumn === "name"
-      ? product.name
-      : sortColumn === "slug"
-        ? product.slug
-        : sortColumn === "type"
-          ? product.type
-          : sortColumn === "active"
-            ? product.active
-            : product.createdAt;
+    if (filters.type && filters.type !== "all") {
+      conditions.push(
+        eq(
+          product.type,
+          filters.type as "plugin" | "theme" | "source_code" | "other"
+        )
+      );
+    }
 
-  // Execute queries using relational API
-  const [products, totalResult] = await Promise.all([
-    db.query.product.findMany({
-      where: whereClause,
-      orderBy: sortOrder(sortField),
-      limit: pageSize,
-      offset: offset,
-      with: {
-        licenses: {
-          columns: { id: true },
+    if (filters.status === "active") {
+      conditions.push(eq(product.active, true));
+    } else if (filters.status === "inactive") {
+      conditions.push(eq(product.active, false));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get sort order
+    const sortOrder = sortDirection === "asc" ? asc : desc;
+    const sortField =
+      sortColumn === "name"
+        ? product.name
+        : sortColumn === "slug"
+          ? product.slug
+          : sortColumn === "type"
+            ? product.type
+            : sortColumn === "active"
+              ? product.active
+              : product.createdAt;
+
+    // Execute queries using relational API
+    const [products, totalResult] = await Promise.all([
+      db.query.product.findMany({
+        where: whereClause,
+        orderBy: sortOrder(sortField),
+        limit: pageSize,
+        offset: offset,
+        with: {
+          licenses: {
+            columns: { id: true },
+          },
+        },
+      }),
+      db.select({ count: count() }).from(product).where(whereClause),
+    ]);
+
+    const productsWithCounts = products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      description: p.description,
+      type: p.type,
+      active: p.active,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+      _count: {
+        licenses: p.licenses.length,
+      },
+    }));
+
+    const totalItems = totalResult[0]?.count ?? 0;
+    const totalPages = Math.ceil(totalItems / pageSize);
+
+    return {
+      success: true,
+      data: {
+        products: productsWithCounts as ProductTableData[],
+        pagination: {
+          page,
+          pageSize,
+          totalItems,
+          totalPages,
         },
       },
-    }),
-    db.select({ count: count() }).from(product).where(whereClause),
-  ]);
-
-  const productsWithCounts = products.map((p) => ({
-    id: p.id,
-    name: p.name,
-    slug: p.slug,
-    description: p.description,
-    type: p.type,
-    active: p.active,
-    createdAt: p.createdAt,
-    updatedAt: p.updatedAt,
-    _count: {
-      licenses: p.licenses.length,
-    },
-  }));
-
-  const totalItems = totalResult[0]?.count ?? 0;
-  const totalPages = Math.ceil(totalItems / pageSize);
-
-  return {
-    products: productsWithCounts as ProductTableData[],
-    pagination: {
-      page,
-      pageSize,
-      totalItems,
-      totalPages,
-    },
-  };
+    };
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    return { success: false, message: "Failed to fetch products" };
+  }
 }
 
 // Get all products for dropdown selection
 export async function getAllProducts(): Promise<
-  { id: string; name: string; slug: string }[]
+  ActionResult<{ id: string; name: string; slug: string }[]>
 > {
-  const products = await db.query.product.findMany({
-    where: eq(product.active, true),
-    orderBy: asc(product.name),
-    columns: {
-      id: true,
-      name: true,
-      slug: true,
-    },
-  });
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
 
-  return products;
+  try {
+    const products = await db.query.product.findMany({
+      where: eq(product.active, true),
+      orderBy: asc(product.name),
+      columns: {
+        id: true,
+        name: true,
+        slug: true,
+      },
+    });
+
+    return { success: true, data: products };
+  } catch (error) {
+    console.error("Error fetching all products:", error);
+    return { success: false, message: "Failed to fetch products" };
+  }
 }
 
 // Get single product by ID
 export async function getProductById(
   id: string
 ): Promise<ActionResult<ProductTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const result = await db.query.product.findFirst({
       where: eq(product.id, id),
@@ -184,6 +215,11 @@ export async function getProductById(
 export async function createProduct(
   formData: FormData
 ): Promise<ActionResult<ProductTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const rawData = {
       name: formData.get("name") as string,
@@ -248,6 +284,11 @@ export async function createProduct(
 export async function updateProduct(
   formData: FormData
 ): Promise<ActionResult<ProductTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const rawData = {
       id: formData.get("id") as string,
@@ -318,6 +359,11 @@ export async function updateProduct(
 
 // Delete a product
 export async function deleteProduct(id: string): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     // Check if product has licenses
     const licenseCount = await db
@@ -353,6 +399,11 @@ export async function deleteProduct(id: string): Promise<ActionResult> {
 
 // Delete multiple products
 export async function deleteProducts(ids: string[]): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     if (ids.length === 0) {
       return { success: false, message: "No products selected" };
@@ -394,32 +445,52 @@ export async function deleteProducts(ids: string[]): Promise<ActionResult> {
 }
 
 // Get product statistics
-export async function getProductStats(): Promise<{
-  total: number;
-  active: number;
-  inactive: number;
-  byType: Record<string, number>;
-}> {
-  const [totalResult, activeResult, typeResults] = await Promise.all([
-    db.select({ count: count() }).from(product),
-    db.select({ count: count() }).from(product).where(eq(product.active, true)),
-    db
-      .select({
-        type: product.type,
-        count: count(),
-      })
-      .from(product)
-      .groupBy(product.type),
-  ]);
+export async function getProductStats(): Promise<
+  ActionResult<{
+    total: number;
+    active: number;
+    inactive: number;
+    byType: Record<string, number>;
+  }>
+> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
 
-  const total = totalResult[0]?.count ?? 0;
-  const active = activeResult[0]?.count ?? 0;
-  const byType = Object.fromEntries(typeResults.map((r) => [r.type, r.count]));
+  try {
+    const [totalResult, activeResult, typeResults] = await Promise.all([
+      db.select({ count: count() }).from(product),
+      db
+        .select({ count: count() })
+        .from(product)
+        .where(eq(product.active, true)),
+      db
+        .select({
+          type: product.type,
+          count: count(),
+        })
+        .from(product)
+        .groupBy(product.type),
+    ]);
 
-  return {
-    total,
-    active,
-    inactive: total - active,
-    byType,
-  };
+    const total = totalResult[0]?.count ?? 0;
+    const active = activeResult[0]?.count ?? 0;
+    const byType = Object.fromEntries(
+      typeResults.map((r) => [r.type, r.count])
+    );
+
+    return {
+      success: true,
+      data: {
+        total,
+        active,
+        inactive: total - active,
+        byType,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching product stats:", error);
+    return { success: false, message: "Failed to fetch product statistics" };
+  }
 }

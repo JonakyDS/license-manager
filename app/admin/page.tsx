@@ -30,7 +30,13 @@ export const metadata = {
 };
 
 async function UserStatsCards() {
-  const stats = await getUserStats();
+  const result = await getUserStats();
+  const stats = result.data ?? {
+    total: 0,
+    admins: 0,
+    verified: 0,
+    unverified: 0,
+  };
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -63,7 +69,8 @@ async function UserStatsCards() {
 }
 
 async function ProductStatsCards() {
-  const stats = await getProductStats();
+  const result = await getProductStats();
+  const stats = result.data ?? { total: 0, active: 0, inactive: 0, byType: {} };
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -96,7 +103,8 @@ async function ProductStatsCards() {
 }
 
 async function LicenseStatsCards() {
-  const stats = await getLicenseStats();
+  const result = await getLicenseStats();
+  const stats = result.data ?? { total: 0, active: 0, expired: 0, revoked: 0 };
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

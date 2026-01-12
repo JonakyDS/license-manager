@@ -12,6 +12,7 @@ import type {
   PaginationConfig,
 } from "@/lib/types/admin";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/admin";
+import { requireAdmin } from "./auth";
 
 // Validation schemas
 const createUserSchema = z.object({
@@ -35,78 +36,98 @@ export async function getUsers(
   pageSize: number = DEFAULT_PAGE_SIZE,
   sortColumn: string = "createdAt",
   sortDirection: "asc" | "desc" = "desc"
-): Promise<{
-  users: UserTableData[];
-  pagination: PaginationConfig;
-}> {
-  const offset = (page - 1) * pageSize;
-
-  // Build where conditions
-  const conditions = [];
-
-  if (filters.search) {
-    conditions.push(
-      or(
-        ilike(user.name, `%${filters.search}%`),
-        ilike(user.email, `%${filters.search}%`)
-      )
-    );
+): Promise<
+  ActionResult<{
+    users: UserTableData[];
+    pagination: PaginationConfig;
+  }>
+> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
   }
 
-  if (filters.role && filters.role !== "all") {
-    conditions.push(eq(user.role, filters.role as "user" | "admin"));
+  try {
+    const offset = (page - 1) * pageSize;
+
+    // Build where conditions
+    const conditions = [];
+
+    if (filters.search) {
+      conditions.push(
+        or(
+          ilike(user.name, `%${filters.search}%`),
+          ilike(user.email, `%${filters.search}%`)
+        )
+      );
+    }
+
+    if (filters.role && filters.role !== "all") {
+      conditions.push(eq(user.role, filters.role as "user" | "admin"));
+    }
+
+    if (filters.status === "verified") {
+      conditions.push(eq(user.emailVerified, true));
+    } else if (filters.status === "unverified") {
+      conditions.push(eq(user.emailVerified, false));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get sort order
+    const sortOrder = sortDirection === "asc" ? asc : desc;
+    const sortField =
+      sortColumn === "name"
+        ? user.name
+        : sortColumn === "email"
+          ? user.email
+          : sortColumn === "role"
+            ? user.role
+            : sortColumn === "emailVerified"
+              ? user.emailVerified
+              : user.createdAt;
+
+    // Execute queries using relational API
+    const [users, totalResult] = await Promise.all([
+      db.query.user.findMany({
+        where: whereClause,
+        orderBy: sortOrder(sortField),
+        limit: pageSize,
+        offset: offset,
+      }),
+      db.select({ count: count() }).from(user).where(whereClause),
+    ]);
+
+    const totalItems = totalResult[0]?.count ?? 0;
+    const totalPages = Math.ceil(totalItems / pageSize);
+
+    return {
+      success: true,
+      data: {
+        users: users as UserTableData[],
+        pagination: {
+          page,
+          pageSize,
+          totalItems,
+          totalPages,
+        },
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    return { success: false, message: "Failed to fetch users" };
   }
-
-  if (filters.status === "verified") {
-    conditions.push(eq(user.emailVerified, true));
-  } else if (filters.status === "unverified") {
-    conditions.push(eq(user.emailVerified, false));
-  }
-
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-  // Get sort order
-  const sortOrder = sortDirection === "asc" ? asc : desc;
-  const sortField =
-    sortColumn === "name"
-      ? user.name
-      : sortColumn === "email"
-        ? user.email
-        : sortColumn === "role"
-          ? user.role
-          : sortColumn === "emailVerified"
-            ? user.emailVerified
-            : user.createdAt;
-
-  // Execute queries using relational API
-  const [users, totalResult] = await Promise.all([
-    db.query.user.findMany({
-      where: whereClause,
-      orderBy: sortOrder(sortField),
-      limit: pageSize,
-      offset: offset,
-    }),
-    db.select({ count: count() }).from(user).where(whereClause),
-  ]);
-
-  const totalItems = totalResult[0]?.count ?? 0;
-  const totalPages = Math.ceil(totalItems / pageSize);
-
-  return {
-    users: users as UserTableData[],
-    pagination: {
-      page,
-      pageSize,
-      totalItems,
-      totalPages,
-    },
-  };
 }
 
 // Get single user by ID
 export async function getUserById(
   id: string
 ): Promise<ActionResult<UserTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const result = await db.query.user.findFirst({
       where: eq(user.id, id),
@@ -127,6 +148,11 @@ export async function getUserById(
 export async function createUser(
   formData: FormData
 ): Promise<ActionResult<UserTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const rawData = {
       name: formData.get("name") as string,
@@ -184,6 +210,11 @@ export async function createUser(
 export async function updateUser(
   formData: FormData
 ): Promise<ActionResult<UserTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const rawData = {
       id: formData.get("id") as string,
@@ -248,6 +279,11 @@ export async function updateUser(
 
 // Delete a user
 export async function deleteUser(id: string): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const deletedUser = await db
       .delete(user)
@@ -269,6 +305,11 @@ export async function deleteUser(id: string): Promise<ActionResult> {
 
 // Delete multiple users
 export async function deleteUsers(ids: string[]): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     if (ids.length === 0) {
       return { success: false, message: "No users selected" };
@@ -291,29 +332,44 @@ export async function deleteUsers(ids: string[]): Promise<ActionResult> {
 }
 
 // Get user statistics
-export async function getUserStats(): Promise<{
-  total: number;
-  admins: number;
-  verified: number;
-  unverified: number;
-}> {
-  const [totalResult, adminResult, verifiedResult] = await Promise.all([
-    db.select({ count: count() }).from(user),
-    db.select({ count: count() }).from(user).where(eq(user.role, "admin")),
-    db
-      .select({ count: count() })
-      .from(user)
-      .where(eq(user.emailVerified, true)),
-  ]);
+export async function getUserStats(): Promise<
+  ActionResult<{
+    total: number;
+    admins: number;
+    verified: number;
+    unverified: number;
+  }>
+> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
 
-  const total = totalResult[0]?.count ?? 0;
-  const admins = adminResult[0]?.count ?? 0;
-  const verified = verifiedResult[0]?.count ?? 0;
+  try {
+    const [totalResult, adminResult, verifiedResult] = await Promise.all([
+      db.select({ count: count() }).from(user),
+      db.select({ count: count() }).from(user).where(eq(user.role, "admin")),
+      db
+        .select({ count: count() })
+        .from(user)
+        .where(eq(user.emailVerified, true)),
+    ]);
 
-  return {
-    total,
-    admins,
-    verified,
-    unverified: total - verified,
-  };
+    const total = totalResult[0]?.count ?? 0;
+    const admins = adminResult[0]?.count ?? 0;
+    const verified = verifiedResult[0]?.count ?? 0;
+
+    return {
+      success: true,
+      data: {
+        total,
+        admins,
+        verified,
+        unverified: total - verified,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching user stats:", error);
+    return { success: false, message: "Failed to fetch user statistics" };
+  }
 }

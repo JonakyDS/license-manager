@@ -32,13 +32,18 @@ async function CsvUploadsData({ searchParams }: CsvUploadsPageProps) {
   const sortColumn = params.sortColumn || "createdAt";
   const sortDirection = (params.sortDirection as SortDirection) || "desc";
 
-  const data = await getCsvUploads(
+  const result = await getCsvUploads(
     { search, status, licenseId },
     page,
     pageSize,
     sortColumn,
     sortDirection
   );
+
+  const data = result.data ?? {
+    csvUploads: [],
+    pagination: { page: 1, pageSize, totalItems: 0, totalPages: 0 },
+  };
 
   return <CsvUploadsClient initialData={data} />;
 }

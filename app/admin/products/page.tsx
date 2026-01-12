@@ -32,13 +32,18 @@ async function ProductsData({ searchParams }: ProductsPageProps) {
   const sortColumn = params.sortColumn || "createdAt";
   const sortDirection = (params.sortDirection as SortDirection) || "desc";
 
-  const data = await getProducts(
+  const result = await getProducts(
     { search, type, status },
     page,
     pageSize,
     sortColumn,
     sortDirection
   );
+
+  const data = result.data ?? {
+    products: [],
+    pagination: { page: 1, pageSize, totalItems: 0, totalPages: 0 },
+  };
 
   return <ProductsClient initialData={data} />;
 }

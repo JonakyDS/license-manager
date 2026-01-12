@@ -12,6 +12,7 @@ import type {
   PaginationConfig,
 } from "@/lib/types/admin";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/admin";
+import { requireAdmin } from "./auth";
 
 // Generate a license key
 function generateLicenseKey(): string {
@@ -59,90 +60,110 @@ export async function getLicenses(
   pageSize: number = DEFAULT_PAGE_SIZE,
   sortColumn: string = "createdAt",
   sortDirection: "asc" | "desc" = "desc"
-): Promise<{
-  licenses: LicenseTableData[];
-  pagination: PaginationConfig;
-}> {
-  const offset = (page - 1) * pageSize;
-
-  // Build where conditions
-  const conditions = [];
-
-  if (filters.search) {
-    conditions.push(
-      or(
-        ilike(license.licenseKey, `%${filters.search}%`),
-        ilike(license.customerName, `%${filters.search}%`),
-        ilike(license.customerEmail, `%${filters.search}%`)
-      )
-    );
+): Promise<
+  ActionResult<{
+    licenses: LicenseTableData[];
+    pagination: PaginationConfig;
+  }>
+> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
   }
 
-  if (filters.status && filters.status !== "all") {
-    conditions.push(
-      eq(license.status, filters.status as "active" | "expired" | "revoked")
-    );
-  }
+  try {
+    const offset = (page - 1) * pageSize;
 
-  if (filters.productId && filters.productId !== "all") {
-    conditions.push(eq(license.productId, filters.productId));
-  }
+    // Build where conditions
+    const conditions = [];
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    if (filters.search) {
+      conditions.push(
+        or(
+          ilike(license.licenseKey, `%${filters.search}%`),
+          ilike(license.customerName, `%${filters.search}%`),
+          ilike(license.customerEmail, `%${filters.search}%`)
+        )
+      );
+    }
 
-  // Get sort order
-  const sortOrder = sortDirection === "asc" ? asc : desc;
-  const sortField =
-    sortColumn === "licenseKey"
-      ? license.licenseKey
-      : sortColumn === "customerName"
-        ? license.customerName
-        : sortColumn === "customerEmail"
-          ? license.customerEmail
-          : sortColumn === "status"
-            ? license.status
-            : sortColumn === "expiresAt"
-              ? license.expiresAt
-              : license.createdAt;
+    if (filters.status && filters.status !== "all") {
+      conditions.push(
+        eq(license.status, filters.status as "active" | "expired" | "revoked")
+      );
+    }
 
-  // Execute queries using relational API with product eager loading
-  const [licenses, totalResult] = await Promise.all([
-    db.query.license.findMany({
-      where: whereClause,
-      orderBy: sortOrder(sortField),
-      limit: pageSize,
-      offset: offset,
-      with: {
-        product: {
-          columns: {
-            id: true,
-            name: true,
-            slug: true,
+    if (filters.productId && filters.productId !== "all") {
+      conditions.push(eq(license.productId, filters.productId));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get sort order
+    const sortOrder = sortDirection === "asc" ? asc : desc;
+    const sortField =
+      sortColumn === "licenseKey"
+        ? license.licenseKey
+        : sortColumn === "customerName"
+          ? license.customerName
+          : sortColumn === "customerEmail"
+            ? license.customerEmail
+            : sortColumn === "status"
+              ? license.status
+              : sortColumn === "expiresAt"
+                ? license.expiresAt
+                : license.createdAt;
+
+    // Execute queries using relational API with product eager loading
+    const [licenses, totalResult] = await Promise.all([
+      db.query.license.findMany({
+        where: whereClause,
+        orderBy: sortOrder(sortField),
+        limit: pageSize,
+        offset: offset,
+        with: {
+          product: {
+            columns: {
+              id: true,
+              name: true,
+              slug: true,
+            },
           },
         },
+      }),
+      db.select({ count: count() }).from(license).where(whereClause),
+    ]);
+
+    const totalItems = totalResult[0]?.count ?? 0;
+    const totalPages = Math.ceil(totalItems / pageSize);
+
+    return {
+      success: true,
+      data: {
+        licenses: licenses as LicenseTableData[],
+        pagination: {
+          page,
+          pageSize,
+          totalItems,
+          totalPages,
+        },
       },
-    }),
-    db.select({ count: count() }).from(license).where(whereClause),
-  ]);
-
-  const totalItems = totalResult[0]?.count ?? 0;
-  const totalPages = Math.ceil(totalItems / pageSize);
-
-  return {
-    licenses: licenses as LicenseTableData[],
-    pagination: {
-      page,
-      pageSize,
-      totalItems,
-      totalPages,
-    },
-  };
+    };
+  } catch (error) {
+    console.error("Error fetching licenses:", error);
+    return { success: false, message: "Failed to fetch licenses" };
+  }
 }
 
 // Get single license by ID
 export async function getLicenseById(
   id: string
 ): Promise<ActionResult<LicenseTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const result = await db.query.license.findFirst({
       where: eq(license.id, id),
@@ -172,6 +193,11 @@ export async function getLicenseById(
 export async function createLicense(
   formData: FormData
 ): Promise<ActionResult<LicenseTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const rawData = {
       productId: formData.get("productId") as string,
@@ -250,6 +276,11 @@ export async function createLicense(
 export async function updateLicense(
   formData: FormData
 ): Promise<ActionResult<LicenseTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const rawData = {
       id: formData.get("id") as string,
@@ -315,6 +346,11 @@ export async function updateLicense(
 
 // Delete a license
 export async function deleteLicense(id: string): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const deletedLicense = await db
       .delete(license)
@@ -336,6 +372,11 @@ export async function deleteLicense(id: string): Promise<ActionResult> {
 
 // Delete multiple licenses
 export async function deleteLicenses(ids: string[]): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     if (ids.length === 0) {
       return { success: false, message: "No licenses selected" };
@@ -359,6 +400,11 @@ export async function deleteLicenses(ids: string[]): Promise<ActionResult> {
 
 // Revoke a license
 export async function revokeLicense(id: string): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const updatedLicense = await db
       .update(license)
@@ -380,33 +426,48 @@ export async function revokeLicense(id: string): Promise<ActionResult> {
 }
 
 // Get license statistics
-export async function getLicenseStats(): Promise<{
-  total: number;
-  active: number;
-  expired: number;
-  revoked: number;
-}> {
-  const [totalResult, activeResult, expiredResult, revokedResult] =
-    await Promise.all([
-      db.select({ count: count() }).from(license),
-      db
-        .select({ count: count() })
-        .from(license)
-        .where(eq(license.status, "active")),
-      db
-        .select({ count: count() })
-        .from(license)
-        .where(eq(license.status, "expired")),
-      db
-        .select({ count: count() })
-        .from(license)
-        .where(eq(license.status, "revoked")),
-    ]);
+export async function getLicenseStats(): Promise<
+  ActionResult<{
+    total: number;
+    active: number;
+    expired: number;
+    revoked: number;
+  }>
+> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
 
-  return {
-    total: totalResult[0]?.count ?? 0,
-    active: activeResult[0]?.count ?? 0,
-    expired: expiredResult[0]?.count ?? 0,
-    revoked: revokedResult[0]?.count ?? 0,
-  };
+  try {
+    const [totalResult, activeResult, expiredResult, revokedResult] =
+      await Promise.all([
+        db.select({ count: count() }).from(license),
+        db
+          .select({ count: count() })
+          .from(license)
+          .where(eq(license.status, "active")),
+        db
+          .select({ count: count() })
+          .from(license)
+          .where(eq(license.status, "expired")),
+        db
+          .select({ count: count() })
+          .from(license)
+          .where(eq(license.status, "revoked")),
+      ]);
+
+    return {
+      success: true,
+      data: {
+        total: totalResult[0]?.count ?? 0,
+        active: activeResult[0]?.count ?? 0,
+        expired: expiredResult[0]?.count ?? 0,
+        revoked: revokedResult[0]?.count ?? 0,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching license stats:", error);
+    return { success: false, message: "Failed to fetch license statistics" };
+  }
 }

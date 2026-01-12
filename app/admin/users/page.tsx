@@ -32,13 +32,18 @@ async function UsersData({ searchParams }: UsersPageProps) {
   const sortColumn = params.sortColumn || "createdAt";
   const sortDirection = (params.sortDirection as SortDirection) || "desc";
 
-  const data = await getUsers(
+  const result = await getUsers(
     { search, role, status },
     page,
     pageSize,
     sortColumn,
     sortDirection
   );
+
+  const data = result.data ?? {
+    users: [],
+    pagination: { page: 1, pageSize, totalItems: 0, totalPages: 0 },
+  };
 
   return <UsersClient initialData={data} />;
 }

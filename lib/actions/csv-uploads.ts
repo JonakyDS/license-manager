@@ -11,6 +11,7 @@ import type {
   PaginationConfig,
 } from "@/lib/types/admin";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/admin";
+import { requireAdmin } from "./auth";
 
 // Get CSV uploads with pagination, search, and filters
 export async function getCsvUploads(
@@ -19,166 +20,186 @@ export async function getCsvUploads(
   pageSize: number = DEFAULT_PAGE_SIZE,
   sortColumn: string = "createdAt",
   sortDirection: "asc" | "desc" = "desc"
-): Promise<{
-  csvUploads: CsvUploadTableData[];
-  pagination: PaginationConfig;
-}> {
-  const offset = (page - 1) * pageSize;
-
-  // Build where conditions
-  const conditions = [];
-
-  if (filters.search) {
-    conditions.push(
-      or(
-        ilike(naldaCsvUploadRequest.domain, `%${filters.search}%`),
-        ilike(naldaCsvUploadRequest.csvFileName, `%${filters.search}%`),
-        ilike(naldaCsvUploadRequest.sftpHost, `%${filters.search}%`)
-      )
-    );
+): Promise<
+  ActionResult<{
+    csvUploads: CsvUploadTableData[];
+    pagination: PaginationConfig;
+  }>
+> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
   }
 
-  if (filters.status && filters.status !== "all") {
-    conditions.push(
-      eq(
-        naldaCsvUploadRequest.status,
-        filters.status as "pending" | "processing" | "processed" | "failed"
-      )
-    );
-  }
+  try {
+    const offset = (page - 1) * pageSize;
 
-  if (filters.licenseId && filters.licenseId !== "all") {
-    conditions.push(eq(naldaCsvUploadRequest.licenseId, filters.licenseId));
-  }
+    // Build where conditions
+    const conditions = [];
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    if (filters.search) {
+      conditions.push(
+        or(
+          ilike(naldaCsvUploadRequest.domain, `%${filters.search}%`),
+          ilike(naldaCsvUploadRequest.csvFileName, `%${filters.search}%`),
+          ilike(naldaCsvUploadRequest.sftpHost, `%${filters.search}%`)
+        )
+      );
+    }
 
-  // Get sort order
-  const sortOrder = sortDirection === "asc" ? asc : desc;
-  const sortField =
-    sortColumn === "domain"
-      ? naldaCsvUploadRequest.domain
-      : sortColumn === "csvFileName"
-        ? naldaCsvUploadRequest.csvFileName
-        : sortColumn === "status"
-          ? naldaCsvUploadRequest.status
-          : sortColumn === "processedAt"
-            ? naldaCsvUploadRequest.processedAt
-            : naldaCsvUploadRequest.createdAt;
+    if (filters.status && filters.status !== "all") {
+      conditions.push(
+        eq(
+          naldaCsvUploadRequest.status,
+          filters.status as "pending" | "processing" | "processed" | "failed"
+        )
+      );
+    }
 
-  // Execute queries using standard select with left join
-  const [csvUploadsRaw, totalResult] = await Promise.all([
-    db
-      .select({
-        id: naldaCsvUploadRequest.id,
-        licenseId: naldaCsvUploadRequest.licenseId,
-        domain: naldaCsvUploadRequest.domain,
-        sftpHost: naldaCsvUploadRequest.sftpHost,
-        sftpPort: naldaCsvUploadRequest.sftpPort,
-        sftpUsername: naldaCsvUploadRequest.sftpUsername,
-        sftpPassword: naldaCsvUploadRequest.sftpPassword,
-        csvFileKey: naldaCsvUploadRequest.csvFileKey,
-        csvFileUrl: naldaCsvUploadRequest.csvFileUrl,
-        csvFileName: naldaCsvUploadRequest.csvFileName,
-        csvFileSize: naldaCsvUploadRequest.csvFileSize,
-        status: naldaCsvUploadRequest.status,
-        processedAt: naldaCsvUploadRequest.processedAt,
-        errorMessage: naldaCsvUploadRequest.errorMessage,
-        createdAt: naldaCsvUploadRequest.createdAt,
-        updatedAt: naldaCsvUploadRequest.updatedAt,
-        licenseKey: license.licenseKey,
-        customerName: license.customerName,
-        customerEmail: license.customerEmail,
-        productId: license.productId,
-      })
-      .from(naldaCsvUploadRequest)
-      .leftJoin(license, eq(naldaCsvUploadRequest.licenseId, license.id))
-      .where(whereClause)
-      .orderBy(sortOrder(sortField))
-      .limit(pageSize)
-      .offset(offset),
-    db
-      .select({ count: count() })
-      .from(naldaCsvUploadRequest)
-      .where(whereClause),
-  ]);
+    if (filters.licenseId && filters.licenseId !== "all") {
+      conditions.push(eq(naldaCsvUploadRequest.licenseId, filters.licenseId));
+    }
 
-  // Get unique product IDs from licenses
-  const productIds = [
-    ...new Set(
-      csvUploadsRaw.map((u) => u.productId).filter((id): id is string => !!id)
-    ),
-  ];
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  // Fetch products if there are any
-  let productsMap: Map<string, { id: string; name: string; slug: string }> =
-    new Map();
-  if (productIds.length > 0) {
-    const products = await db
-      .select({
-        id: product.id,
-        name: product.name,
-        slug: product.slug,
-      })
-      .from(product)
-      .where(inArray(product.id, productIds));
+    // Get sort order
+    const sortOrder = sortDirection === "asc" ? asc : desc;
+    const sortField =
+      sortColumn === "domain"
+        ? naldaCsvUploadRequest.domain
+        : sortColumn === "csvFileName"
+          ? naldaCsvUploadRequest.csvFileName
+          : sortColumn === "status"
+            ? naldaCsvUploadRequest.status
+            : sortColumn === "processedAt"
+              ? naldaCsvUploadRequest.processedAt
+              : naldaCsvUploadRequest.createdAt;
 
-    productsMap = new Map(products.map((p) => [p.id, p]));
-  }
+    // Execute queries using standard select with left join
+    const [csvUploadsRaw, totalResult] = await Promise.all([
+      db
+        .select({
+          id: naldaCsvUploadRequest.id,
+          licenseId: naldaCsvUploadRequest.licenseId,
+          domain: naldaCsvUploadRequest.domain,
+          sftpHost: naldaCsvUploadRequest.sftpHost,
+          sftpPort: naldaCsvUploadRequest.sftpPort,
+          sftpUsername: naldaCsvUploadRequest.sftpUsername,
+          sftpPassword: naldaCsvUploadRequest.sftpPassword,
+          csvFileKey: naldaCsvUploadRequest.csvFileKey,
+          csvFileUrl: naldaCsvUploadRequest.csvFileUrl,
+          csvFileName: naldaCsvUploadRequest.csvFileName,
+          csvFileSize: naldaCsvUploadRequest.csvFileSize,
+          status: naldaCsvUploadRequest.status,
+          processedAt: naldaCsvUploadRequest.processedAt,
+          errorMessage: naldaCsvUploadRequest.errorMessage,
+          createdAt: naldaCsvUploadRequest.createdAt,
+          updatedAt: naldaCsvUploadRequest.updatedAt,
+          licenseKey: license.licenseKey,
+          customerName: license.customerName,
+          customerEmail: license.customerEmail,
+          productId: license.productId,
+        })
+        .from(naldaCsvUploadRequest)
+        .leftJoin(license, eq(naldaCsvUploadRequest.licenseId, license.id))
+        .where(whereClause)
+        .orderBy(sortOrder(sortField))
+        .limit(pageSize)
+        .offset(offset),
+      db
+        .select({ count: count() })
+        .from(naldaCsvUploadRequest)
+        .where(whereClause),
+    ]);
 
-  // Transform to CsvUploadTableData format
-  const csvUploads: CsvUploadTableData[] = csvUploadsRaw.map((upload) => {
-    const productData = upload.productId
-      ? productsMap.get(upload.productId)
-      : undefined;
+    // Get unique product IDs from licenses
+    const productIds = [
+      ...new Set(
+        csvUploadsRaw.map((u) => u.productId).filter((id): id is string => !!id)
+      ),
+    ];
+
+    // Fetch products if there are any
+    let productsMap: Map<string, { id: string; name: string; slug: string }> =
+      new Map();
+    if (productIds.length > 0) {
+      const products = await db
+        .select({
+          id: product.id,
+          name: product.name,
+          slug: product.slug,
+        })
+        .from(product)
+        .where(inArray(product.id, productIds));
+
+      productsMap = new Map(products.map((p) => [p.id, p]));
+    }
+
+    // Transform to CsvUploadTableData format
+    const csvUploads: CsvUploadTableData[] = csvUploadsRaw.map((upload) => {
+      const productData = upload.productId
+        ? productsMap.get(upload.productId)
+        : undefined;
+
+      return {
+        id: upload.id,
+        licenseId: upload.licenseId,
+        domain: upload.domain,
+        sftpHost: upload.sftpHost,
+        sftpPort: upload.sftpPort,
+        sftpUsername: upload.sftpUsername,
+        sftpPassword: upload.sftpPassword,
+        csvFileKey: upload.csvFileKey,
+        csvFileUrl: upload.csvFileUrl,
+        csvFileName: upload.csvFileName,
+        csvFileSize: upload.csvFileSize,
+        status: upload.status,
+        processedAt: upload.processedAt,
+        errorMessage: upload.errorMessage,
+        createdAt: upload.createdAt,
+        updatedAt: upload.updatedAt,
+        license: upload.licenseKey
+          ? {
+              id: upload.licenseId,
+              licenseKey: upload.licenseKey,
+              customerName: upload.customerName,
+              customerEmail: upload.customerEmail,
+              product: productData,
+            }
+          : undefined,
+      };
+    });
+
+    const totalItems = totalResult[0]?.count ?? 0;
+    const totalPages = Math.ceil(totalItems / pageSize);
 
     return {
-      id: upload.id,
-      licenseId: upload.licenseId,
-      domain: upload.domain,
-      sftpHost: upload.sftpHost,
-      sftpPort: upload.sftpPort,
-      sftpUsername: upload.sftpUsername,
-      sftpPassword: upload.sftpPassword,
-      csvFileKey: upload.csvFileKey,
-      csvFileUrl: upload.csvFileUrl,
-      csvFileName: upload.csvFileName,
-      csvFileSize: upload.csvFileSize,
-      status: upload.status,
-      processedAt: upload.processedAt,
-      errorMessage: upload.errorMessage,
-      createdAt: upload.createdAt,
-      updatedAt: upload.updatedAt,
-      license: upload.licenseKey
-        ? {
-            id: upload.licenseId,
-            licenseKey: upload.licenseKey,
-            customerName: upload.customerName,
-            customerEmail: upload.customerEmail,
-            product: productData,
-          }
-        : undefined,
+      success: true,
+      data: {
+        csvUploads,
+        pagination: {
+          page,
+          pageSize,
+          totalItems,
+          totalPages,
+        },
+      },
     };
-  });
-
-  const totalItems = totalResult[0]?.count ?? 0;
-  const totalPages = Math.ceil(totalItems / pageSize);
-
-  return {
-    csvUploads,
-    pagination: {
-      page,
-      pageSize,
-      totalItems,
-      totalPages,
-    },
-  };
+  } catch (error) {
+    console.error("Error fetching CSV uploads:", error);
+    return { success: false, message: "Failed to fetch CSV uploads" };
+  }
 }
 
 // Get single CSV upload by ID
 export async function getCsvUploadById(
   id: string
 ): Promise<ActionResult<CsvUploadTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const results = await db
       .select({
@@ -268,6 +289,11 @@ export async function getCsvUploadById(
 
 // Delete a CSV upload
 export async function deleteCsvUpload(id: string): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const deletedCsvUpload = await db
       .delete(naldaCsvUploadRequest)
@@ -289,6 +315,11 @@ export async function deleteCsvUpload(id: string): Promise<ActionResult> {
 
 // Delete multiple CSV uploads
 export async function deleteCsvUploads(ids: string[]): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     if (ids.length === 0) {
       return { success: false, message: "No CSV uploads selected" };
@@ -318,6 +349,11 @@ export async function updateCsvUploadStatus(
   status: "pending" | "processing" | "processed" | "failed",
   errorMessage?: string
 ): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
+
   try {
     const updateData: {
       status: "pending" | "processing" | "processed" | "failed";
@@ -355,44 +391,59 @@ export async function updateCsvUploadStatus(
 }
 
 // Get CSV upload statistics
-export async function getCsvUploadStats(): Promise<{
-  total: number;
-  pending: number;
-  processing: number;
-  processed: number;
-  failed: number;
-}> {
-  const [
-    totalResult,
-    pendingResult,
-    processingResult,
-    processedResult,
-    failedResult,
-  ] = await Promise.all([
-    db.select({ count: count() }).from(naldaCsvUploadRequest),
-    db
-      .select({ count: count() })
-      .from(naldaCsvUploadRequest)
-      .where(eq(naldaCsvUploadRequest.status, "pending")),
-    db
-      .select({ count: count() })
-      .from(naldaCsvUploadRequest)
-      .where(eq(naldaCsvUploadRequest.status, "processing")),
-    db
-      .select({ count: count() })
-      .from(naldaCsvUploadRequest)
-      .where(eq(naldaCsvUploadRequest.status, "processed")),
-    db
-      .select({ count: count() })
-      .from(naldaCsvUploadRequest)
-      .where(eq(naldaCsvUploadRequest.status, "failed")),
-  ]);
+export async function getCsvUploadStats(): Promise<
+  ActionResult<{
+    total: number;
+    pending: number;
+    processing: number;
+    processed: number;
+    failed: number;
+  }>
+> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) {
+    return adminCheck;
+  }
 
-  return {
-    total: totalResult[0]?.count ?? 0,
-    pending: pendingResult[0]?.count ?? 0,
-    processing: processingResult[0]?.count ?? 0,
-    processed: processedResult[0]?.count ?? 0,
-    failed: failedResult[0]?.count ?? 0,
-  };
+  try {
+    const [
+      totalResult,
+      pendingResult,
+      processingResult,
+      processedResult,
+      failedResult,
+    ] = await Promise.all([
+      db.select({ count: count() }).from(naldaCsvUploadRequest),
+      db
+        .select({ count: count() })
+        .from(naldaCsvUploadRequest)
+        .where(eq(naldaCsvUploadRequest.status, "pending")),
+      db
+        .select({ count: count() })
+        .from(naldaCsvUploadRequest)
+        .where(eq(naldaCsvUploadRequest.status, "processing")),
+      db
+        .select({ count: count() })
+        .from(naldaCsvUploadRequest)
+        .where(eq(naldaCsvUploadRequest.status, "processed")),
+      db
+        .select({ count: count() })
+        .from(naldaCsvUploadRequest)
+        .where(eq(naldaCsvUploadRequest.status, "failed")),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        total: totalResult[0]?.count ?? 0,
+        pending: pendingResult[0]?.count ?? 0,
+        processing: processingResult[0]?.count ?? 0,
+        processed: processedResult[0]?.count ?? 0,
+        failed: failedResult[0]?.count ?? 0,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching CSV upload stats:", error);
+    return { success: false, message: "Failed to fetch CSV upload statistics" };
+  }
 }

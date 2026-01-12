@@ -33,7 +33,7 @@ async function LicensesData({ searchParams }: LicensesPageProps) {
   const sortColumn = params.sortColumn || "createdAt";
   const sortDirection = (params.sortDirection as SortDirection) || "desc";
 
-  const [data, products] = await Promise.all([
+  const [result, productsResult] = await Promise.all([
     getLicenses(
       { search, status, productId },
       page,
@@ -43,6 +43,13 @@ async function LicensesData({ searchParams }: LicensesPageProps) {
     ),
     getAllProducts(),
   ]);
+
+  const data = result.data ?? {
+    licenses: [],
+    pagination: { page: 1, pageSize, totalItems: 0, totalPages: 0 },
+  };
+
+  const products = productsResult.data ?? [];
 
   return <LicensesClient initialData={data} products={products} />;
 }
