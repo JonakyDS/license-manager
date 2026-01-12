@@ -36,6 +36,7 @@ import type {
   ErrorCode,
 } from "@/lib/api/v2/types";
 import { domainSchema, licenseKeySchema } from "@/lib/api/v2/validation";
+import { mapSftpError } from "../utils";
 
 // ============================================================================
 // Constants
@@ -102,122 +103,13 @@ const sftpValidateRequestSchema = z.object({
 // Types
 // ============================================================================
 
-interface SftpValidationResult {
+interface SftpValidationResponseData {
   hostname: string;
   port: number;
   username: string;
   connected: boolean;
   serverInfo?: {
     currentDirectory: string;
-  };
-}
-
-// ============================================================================
-// Error Mapping
-// ============================================================================
-
-interface MappedError {
-  code: ErrorCode;
-  message: string;
-  status: number;
-}
-
-function mapSftpError(error: Error): MappedError {
-  const errorMessage = error.message.toLowerCase();
-
-  // Authentication errors
-  if (
-    errorMessage.includes("authentication failed") ||
-    errorMessage.includes("all configured authentication methods failed")
-  ) {
-    return {
-      code: "AUTH_FAILED",
-      message: "Invalid username or password",
-      status: 401,
-    };
-  }
-
-  // DNS/hostname errors
-  if (
-    errorMessage.includes("enotfound") ||
-    errorMessage.includes("getaddrinfo")
-  ) {
-    return {
-      code: "HOST_NOT_FOUND",
-      message: "Hostname could not be resolved. Please check the hostname.",
-      status: 400,
-    };
-  }
-
-  // Connection refused
-  if (
-    errorMessage.includes("econnrefused") ||
-    errorMessage.includes("connection refused")
-  ) {
-    return {
-      code: "CONNECTION_REFUSED",
-      message: "Connection refused. Please check the hostname and port.",
-      status: 400,
-    };
-  }
-
-  // Timeout errors
-  if (
-    errorMessage.includes("etimedout") ||
-    errorMessage.includes("timed out") ||
-    errorMessage.includes("timeout")
-  ) {
-    return {
-      code: "CONNECTION_TIMEOUT",
-      message: "Connection timed out. The server may be unreachable or slow.",
-      status: 408,
-    };
-  }
-
-  // Host unreachable
-  if (errorMessage.includes("ehostunreach")) {
-    return {
-      code: "HOST_UNREACHABLE",
-      message: "Host is unreachable. Please check your network connection.",
-      status: 400,
-    };
-  }
-
-  // Network unreachable
-  if (errorMessage.includes("enetunreach")) {
-    return {
-      code: "NETWORK_UNREACHABLE",
-      message: "Network is unreachable. Please check your network connection.",
-      status: 400,
-    };
-  }
-
-  // Connection reset
-  if (errorMessage.includes("econnreset")) {
-    return {
-      code: "CONNECTION_RESET",
-      message: "Connection was reset by the server.",
-      status: 400,
-    };
-  }
-
-  // SSH protocol errors
-  if (
-    errorMessage.includes("handshake failed") ||
-    errorMessage.includes("protocol")
-  ) {
-    return {
-      code: "PROTOCOL_ERROR",
-      message: "SSH handshake failed. The server may not support SFTP.",
-      status: 400,
-    };
-  }
-
-  // Default error
-  return {
-    code: "CONNECTION_ERROR",
-    message: "Failed to connect to the SFTP server.",
-    status: 400,
   };
 }
 
