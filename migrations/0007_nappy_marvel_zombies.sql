@@ -1,0 +1,1 @@
+ALTER TABLE "nalda_csv_upload_request" ALTER COLUMN "csv_type" DROP DEFAULT;

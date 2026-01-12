@@ -229,7 +229,7 @@ export const naldaCsvUploadRequest = pgTable(
       .notNull()
       .references(() => license.id, { onDelete: "cascade" }),
     domain: text("domain").notNull(),
-    csvType: csvTypeEnum("csv_type").default("orders").notNull(),
+    csvType: csvTypeEnum("csv_type").notNull(),
     sftpHost: text("sftp_host").notNull(),
     sftpPort: integer("sftp_port").default(22).notNull(),
     sftpUsername: text("sftp_username").notNull(),
