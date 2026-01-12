@@ -1,337 +1,162 @@
 "use server";
 
+/**
+ * User Management Server Actions
+ *
+ * Provides CRUD operations for user management in the admin panel.
+ * All actions require admin authentication.
+ */
+
 import { db } from "@/db/drizzle";
 import { user } from "@/db/schema";
 import { eq, ilike, or, count, desc, asc, and, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
+import { requireAdmin } from "./auth";
+import {
+  success,
+  ok,
+  failure,
+  notFound,
+  validationError,
+  withErrorHandling,
+  calculatePagination,
+  calculateOffset,
+  getFormField,
+  getBooleanField,
+  generateId,
+} from "./utils";
+import { userSchema } from "@/lib/validations/admin";
 import type {
   ActionResult,
   UserTableData,
   UserFilters,
   PaginationConfig,
+  SortDirection,
 } from "@/lib/types/admin";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/admin";
-import { requireAdmin } from "./auth";
 
-// Validation schemas
-const createUserSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  email: z.string().email("Invalid email address"),
-  role: z.enum(["user", "admin"]),
-});
+// =============================================================================
+// CONSTANTS
+// =============================================================================
 
-const updateUserSchema = z.object({
-  id: z.string().min(1, "User ID is required"),
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  email: z.string().email("Invalid email address"),
-  role: z.enum(["user", "admin"]),
-  emailVerified: z.boolean().optional(),
-});
+const REVALIDATION_PATH = "/admin/users";
 
-// Get users with pagination, search, and filters
-export async function getUsers(
-  filters: UserFilters = {},
-  page: number = 1,
-  pageSize: number = DEFAULT_PAGE_SIZE,
-  sortColumn: string = "createdAt",
-  sortDirection: "asc" | "desc" = "desc"
-): Promise<
-  ActionResult<{
-    users: UserTableData[];
-    pagination: PaginationConfig;
-  }>
-> {
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+/**
+ * Builds sort configuration for user queries
+ */
+function getUserSortField(sortColumn: string) {
+  switch (sortColumn) {
+    case "name":
+      return user.name;
+    case "email":
+      return user.email;
+    case "role":
+      return user.role;
+    case "emailVerified":
+      return user.emailVerified;
+    default:
+      return user.createdAt;
+  }
+}
+
+/**
+ * Builds where conditions for user queries
+ */
+function buildUserWhereConditions(filters: UserFilters) {
+  const conditions = [];
+
+  if (filters.search) {
+    conditions.push(
+      or(
+        ilike(user.name, `%${filters.search}%`),
+        ilike(user.email, `%${filters.search}%`)
+      )
+    );
   }
 
-  try {
-    const offset = (page - 1) * pageSize;
+  if (filters.role && filters.role !== "all") {
+    conditions.push(eq(user.role, filters.role as "user" | "admin"));
+  }
 
-    // Build where conditions
-    const conditions = [];
+  if (filters.status === "verified") {
+    conditions.push(eq(user.emailVerified, true));
+  } else if (filters.status === "unverified") {
+    conditions.push(eq(user.emailVerified, false));
+  }
 
-    if (filters.search) {
-      conditions.push(
-        or(
-          ilike(user.name, `%${filters.search}%`),
-          ilike(user.email, `%${filters.search}%`)
-        )
-      );
-    }
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
 
-    if (filters.role && filters.role !== "all") {
-      conditions.push(eq(user.role, filters.role as "user" | "admin"));
-    }
+// =============================================================================
+// READ OPERATIONS
+// =============================================================================
 
-    if (filters.status === "verified") {
-      conditions.push(eq(user.emailVerified, true));
-    } else if (filters.status === "unverified") {
-      conditions.push(eq(user.emailVerified, false));
-    }
+/**
+ * Retrieves paginated list of users with filtering and sorting
+ */
+export async function getUsers(
+  filters: UserFilters = {},
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
+  sortColumn = "createdAt",
+  sortDirection: SortDirection = "desc"
+): Promise<
+  ActionResult<{ users: UserTableData[]; pagination: PaginationConfig }>
+> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) return adminCheck;
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    // Get sort order
+  return withErrorHandling(async () => {
+    const whereClause = buildUserWhereConditions(filters);
     const sortOrder = sortDirection === "asc" ? asc : desc;
-    const sortField =
-      sortColumn === "name"
-        ? user.name
-        : sortColumn === "email"
-          ? user.email
-          : sortColumn === "role"
-            ? user.role
-            : sortColumn === "emailVerified"
-              ? user.emailVerified
-              : user.createdAt;
+    const sortField = getUserSortField(sortColumn);
 
-    // Execute queries using relational API
     const [users, totalResult] = await Promise.all([
       db.query.user.findMany({
         where: whereClause,
         orderBy: sortOrder(sortField),
         limit: pageSize,
-        offset: offset,
+        offset: calculateOffset(page, pageSize),
       }),
       db.select({ count: count() }).from(user).where(whereClause),
     ]);
 
     const totalItems = totalResult[0]?.count ?? 0;
-    const totalPages = Math.ceil(totalItems / pageSize);
 
-    return {
-      success: true,
-      data: {
-        users: users as UserTableData[],
-        pagination: {
-          page,
-          pageSize,
-          totalItems,
-          totalPages,
-        },
-      },
-    };
-  } catch (error) {
-    console.error("Error fetching users:", error);
-    return { success: false, message: "Failed to fetch users" };
-  }
+    return success({
+      users: users as UserTableData[],
+      pagination: calculatePagination(page, pageSize, totalItems),
+    });
+  }, "Failed to fetch users");
 }
 
-// Get single user by ID
+/**
+ * Retrieves a single user by ID
+ */
 export async function getUserById(
   id: string
 ): Promise<ActionResult<UserTableData>> {
   const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
+  if (!adminCheck.success) return adminCheck;
 
-  try {
+  return withErrorHandling(async () => {
     const result = await db.query.user.findFirst({
       where: eq(user.id, id),
     });
 
-    if (!result) {
-      return { success: false, message: "User not found" };
-    }
+    if (!result) return notFound("User");
 
-    return { success: true, data: result as UserTableData };
-  } catch (error) {
-    console.error("Error fetching user:", error);
-    return { success: false, message: "Failed to fetch user" };
-  }
+    return success(result as UserTableData);
+  }, "Failed to fetch user");
 }
 
-// Create a new user (admin-only, without password - just metadata)
-export async function createUser(
-  formData: FormData
-): Promise<ActionResult<UserTableData>> {
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
-
-  try {
-    const rawData = {
-      name: formData.get("name") as string,
-      email: formData.get("email") as string,
-      role: formData.get("role") as "user" | "admin",
-    };
-
-    const validatedData = createUserSchema.safeParse(rawData);
-
-    if (!validatedData.success) {
-      return {
-        success: false,
-        message: "Validation failed",
-        errors: validatedData.error.flatten().fieldErrors,
-      };
-    }
-
-    // Check if email already exists
-    const existingUser = await db.query.user.findFirst({
-      where: eq(user.email, validatedData.data.email),
-    });
-
-    if (existingUser) {
-      return {
-        success: false,
-        message: "A user with this email already exists",
-      };
-    }
-
-    const newUser = await db
-      .insert(user)
-      .values({
-        id: crypto.randomUUID(),
-        name: validatedData.data.name,
-        email: validatedData.data.email,
-        role: validatedData.data.role,
-        emailVerified: false,
-      })
-      .returning();
-
-    revalidatePath("/admin/users");
-
-    return {
-      success: true,
-      message: "User created successfully",
-      data: newUser[0] as UserTableData,
-    };
-  } catch (error) {
-    console.error("Error creating user:", error);
-    return { success: false, message: "Failed to create user" };
-  }
-}
-
-// Update an existing user
-export async function updateUser(
-  formData: FormData
-): Promise<ActionResult<UserTableData>> {
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
-
-  try {
-    const rawData = {
-      id: formData.get("id") as string,
-      name: formData.get("name") as string,
-      email: formData.get("email") as string,
-      role: formData.get("role") as "user" | "admin",
-      emailVerified: formData.get("emailVerified") === "true",
-    };
-
-    const validatedData = updateUserSchema.safeParse(rawData);
-
-    if (!validatedData.success) {
-      return {
-        success: false,
-        message: "Validation failed",
-        errors: validatedData.error.flatten().fieldErrors,
-      };
-    }
-
-    // Check if email is taken by another user
-    const existingUser = await db.query.user.findFirst({
-      where: and(
-        eq(user.email, validatedData.data.email),
-        sql`${user.id} != ${validatedData.data.id}`
-      ),
-    });
-
-    if (existingUser) {
-      return {
-        success: false,
-        message: "A user with this email already exists",
-      };
-    }
-
-    const updatedUser = await db
-      .update(user)
-      .set({
-        name: validatedData.data.name,
-        email: validatedData.data.email,
-        role: validatedData.data.role,
-        emailVerified: validatedData.data.emailVerified,
-      })
-      .where(eq(user.id, validatedData.data.id))
-      .returning();
-
-    if (updatedUser.length === 0) {
-      return { success: false, message: "User not found" };
-    }
-
-    revalidatePath("/admin/users");
-
-    return {
-      success: true,
-      message: "User updated successfully",
-      data: updatedUser[0] as UserTableData,
-    };
-  } catch (error) {
-    console.error("Error updating user:", error);
-    return { success: false, message: "Failed to update user" };
-  }
-}
-
-// Delete a user
-export async function deleteUser(id: string): Promise<ActionResult> {
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
-
-  try {
-    const deletedUser = await db
-      .delete(user)
-      .where(eq(user.id, id))
-      .returning();
-
-    if (deletedUser.length === 0) {
-      return { success: false, message: "User not found" };
-    }
-
-    revalidatePath("/admin/users");
-
-    return { success: true, message: "User deleted successfully" };
-  } catch (error) {
-    console.error("Error deleting user:", error);
-    return { success: false, message: "Failed to delete user" };
-  }
-}
-
-// Delete multiple users
-export async function deleteUsers(ids: string[]): Promise<ActionResult> {
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
-
-  try {
-    if (ids.length === 0) {
-      return { success: false, message: "No users selected" };
-    }
-
-    for (const id of ids) {
-      await db.delete(user).where(eq(user.id, id));
-    }
-
-    revalidatePath("/admin/users");
-
-    return {
-      success: true,
-      message: `${ids.length} user(s) deleted successfully`,
-    };
-  } catch (error) {
-    console.error("Error deleting users:", error);
-    return { success: false, message: "Failed to delete users" };
-  }
-}
-
-// Get user statistics
+/**
+ * Gets aggregated user statistics
+ */
 export async function getUserStats(): Promise<
   ActionResult<{
     total: number;
@@ -341,11 +166,9 @@ export async function getUserStats(): Promise<
   }>
 > {
   const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
+  if (!adminCheck.success) return adminCheck;
 
-  try {
+  return withErrorHandling(async () => {
     const [totalResult, adminResult, verifiedResult] = await Promise.all([
       db.select({ count: count() }).from(user),
       db.select({ count: count() }).from(user).where(eq(user.role, "admin")),
@@ -359,17 +182,162 @@ export async function getUserStats(): Promise<
     const admins = adminResult[0]?.count ?? 0;
     const verified = verifiedResult[0]?.count ?? 0;
 
-    return {
-      success: true,
-      data: {
-        total,
-        admins,
-        verified,
-        unverified: total - verified,
-      },
+    return success({
+      total,
+      admins,
+      verified,
+      unverified: total - verified,
+    });
+  }, "Failed to fetch user statistics");
+}
+
+// =============================================================================
+// WRITE OPERATIONS
+// =============================================================================
+
+/**
+ * Creates a new user (admin-only, without password)
+ */
+export async function createUser(
+  formData: FormData
+): Promise<ActionResult<UserTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) return adminCheck;
+
+  return withErrorHandling(async () => {
+    const rawData = {
+      name: getFormField(formData, "name"),
+      email: getFormField(formData, "email"),
+      role: getFormField(formData, "role") as "user" | "admin",
     };
-  } catch (error) {
-    console.error("Error fetching user stats:", error);
-    return { success: false, message: "Failed to fetch user statistics" };
-  }
+
+    const validated = userSchema.create.safeParse(rawData);
+    if (!validated.success) {
+      return validationError(validated.error.flatten().fieldErrors);
+    }
+
+    // Check for existing email
+    const existingUser = await db.query.user.findFirst({
+      where: eq(user.email, validated.data.email),
+    });
+
+    if (existingUser) {
+      return failure("A user with this email already exists");
+    }
+
+    const [newUser] = await db
+      .insert(user)
+      .values({
+        id: generateId(),
+        name: validated.data.name,
+        email: validated.data.email,
+        role: validated.data.role,
+        emailVerified: false,
+      })
+      .returning();
+
+    revalidatePath(REVALIDATION_PATH);
+
+    return success(newUser as UserTableData, "User created successfully");
+  }, "Failed to create user");
+}
+
+/**
+ * Updates an existing user
+ */
+export async function updateUser(
+  formData: FormData
+): Promise<ActionResult<UserTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) return adminCheck;
+
+  return withErrorHandling(async () => {
+    const rawData = {
+      id: getFormField(formData, "id"),
+      name: getFormField(formData, "name"),
+      email: getFormField(formData, "email"),
+      role: getFormField(formData, "role") as "user" | "admin",
+      emailVerified: getBooleanField(formData, "emailVerified"),
+    };
+
+    const validated = userSchema.update.safeParse(rawData);
+    if (!validated.success) {
+      return validationError(validated.error.flatten().fieldErrors);
+    }
+
+    // Check if email is taken by another user
+    const existingUser = await db.query.user.findFirst({
+      where: and(
+        eq(user.email, validated.data.email),
+        sql`${user.id} != ${validated.data.id}`
+      ),
+    });
+
+    if (existingUser) {
+      return failure("A user with this email already exists");
+    }
+
+    const [updatedUser] = await db
+      .update(user)
+      .set({
+        name: validated.data.name,
+        email: validated.data.email,
+        role: validated.data.role,
+        emailVerified: validated.data.emailVerified,
+      })
+      .where(eq(user.id, validated.data.id))
+      .returning();
+
+    if (!updatedUser) return notFound("User");
+
+    revalidatePath(REVALIDATION_PATH);
+
+    return success(updatedUser as UserTableData, "User updated successfully");
+  }, "Failed to update user");
+}
+
+// =============================================================================
+// DELETE OPERATIONS
+// =============================================================================
+
+/**
+ * Deletes a single user by ID
+ */
+export async function deleteUser(id: string): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) return adminCheck;
+
+  return withErrorHandling(async () => {
+    const [deletedUser] = await db
+      .delete(user)
+      .where(eq(user.id, id))
+      .returning();
+
+    if (!deletedUser) return notFound("User");
+
+    revalidatePath(REVALIDATION_PATH);
+
+    return ok("User deleted successfully");
+  }, "Failed to delete user");
+}
+
+/**
+ * Deletes multiple users by IDs
+ */
+export async function deleteUsers(ids: string[]): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) return adminCheck;
+
+  return withErrorHandling(async () => {
+    if (ids.length === 0) {
+      return failure("No users selected");
+    }
+
+    // Use transaction for bulk delete
+    await Promise.all(ids.map((id) => db.delete(user).where(eq(user.id, id))));
+
+    revalidatePath(REVALIDATION_PATH);
+
+    return ok(`${ids.length} user(s) deleted successfully`);
+  }, "Failed to delete users");
 }

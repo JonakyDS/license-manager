@@ -1,174 +1,186 @@
 "use server";
 
+/**
+ * Product Management Server Actions
+ *
+ * Provides CRUD operations for product management in the admin panel.
+ * All actions require admin authentication.
+ */
+
 import { db } from "@/db/drizzle";
 import { product, license } from "@/db/schema";
-import { eq, ilike, or, count, desc, asc, and, sql } from "drizzle-orm";
+import {
+  eq,
+  ilike,
+  or,
+  count,
+  desc,
+  asc,
+  and,
+  sql,
+  inArray,
+} from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
+import { requireAdmin } from "./auth";
+import {
+  success,
+  ok,
+  failure,
+  notFound,
+  validationError,
+  withErrorHandling,
+  calculatePagination,
+  calculateOffset,
+  getFormField,
+  getOptionalField,
+  getBooleanField,
+  generateId,
+} from "./utils";
+import { productSchema, type ProductType } from "@/lib/validations/admin";
 import type {
   ActionResult,
   ProductTableData,
   ProductFilters,
   PaginationConfig,
+  SortDirection,
 } from "@/lib/types/admin";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/admin";
-import { requireAdmin } from "./auth";
 
-// Validation schemas
-const createProductSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  slug: z
-    .string()
-    .min(2, "Slug must be at least 2 characters")
-    .regex(
-      /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-      "Slug must be lowercase with hyphens only"
-    ),
-  description: z.string().optional(),
-  type: z.enum(["plugin", "theme", "source_code", "other"]),
-  active: z.boolean().optional().default(true),
-});
+// =============================================================================
+// CONSTANTS
+// =============================================================================
 
-const updateProductSchema = z.object({
-  id: z.string().min(1, "Product ID is required"),
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  slug: z
-    .string()
-    .min(2, "Slug must be at least 2 characters")
-    .regex(
-      /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-      "Slug must be lowercase with hyphens only"
-    ),
-  description: z.string().optional(),
-  type: z.enum(["plugin", "theme", "source_code", "other"]),
-  active: z.boolean().optional(),
-});
+const REVALIDATION_PATH = "/admin/products";
 
-// Get products with pagination, search, and filters
-export async function getProducts(
-  filters: ProductFilters = {},
-  page: number = 1,
-  pageSize: number = DEFAULT_PAGE_SIZE,
-  sortColumn: string = "createdAt",
-  sortDirection: "asc" | "desc" = "desc"
-): Promise<
-  ActionResult<{
-    products: ProductTableData[];
-    pagination: PaginationConfig;
-  }>
-> {
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+/**
+ * Builds sort configuration for product queries
+ */
+function getProductSortField(sortColumn: string) {
+  switch (sortColumn) {
+    case "name":
+      return product.name;
+    case "slug":
+      return product.slug;
+    case "type":
+      return product.type;
+    case "active":
+      return product.active;
+    default:
+      return product.createdAt;
+  }
+}
+
+/**
+ * Builds where conditions for product queries
+ */
+function buildProductWhereConditions(filters: ProductFilters) {
+  const conditions = [];
+
+  if (filters.search) {
+    conditions.push(
+      or(
+        ilike(product.name, `%${filters.search}%`),
+        ilike(product.slug, `%${filters.search}%`),
+        ilike(product.description, `%${filters.search}%`)
+      )
+    );
   }
 
-  try {
-    const offset = (page - 1) * pageSize;
+  if (filters.type && filters.type !== "all") {
+    conditions.push(eq(product.type, filters.type as ProductType));
+  }
 
-    // Build where conditions
-    const conditions = [];
+  if (filters.status === "active") {
+    conditions.push(eq(product.active, true));
+  } else if (filters.status === "inactive") {
+    conditions.push(eq(product.active, false));
+  }
 
-    if (filters.search) {
-      conditions.push(
-        or(
-          ilike(product.name, `%${filters.search}%`),
-          ilike(product.slug, `%${filters.search}%`),
-          ilike(product.description, `%${filters.search}%`)
-        )
-      );
-    }
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
 
-    if (filters.type && filters.type !== "all") {
-      conditions.push(
-        eq(
-          product.type,
-          filters.type as "plugin" | "theme" | "source_code" | "other"
-        )
-      );
-    }
+/**
+ * Transforms raw product with licenses to ProductTableData
+ */
+function transformProductWithLicenseCount(
+  p: typeof product.$inferSelect & { licenses: { id: string }[] }
+): ProductTableData {
+  return {
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    description: p.description,
+    type: p.type,
+    active: p.active,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    _count: {
+      licenses: p.licenses.length,
+    },
+  };
+}
 
-    if (filters.status === "active") {
-      conditions.push(eq(product.active, true));
-    } else if (filters.status === "inactive") {
-      conditions.push(eq(product.active, false));
-    }
+// =============================================================================
+// READ OPERATIONS
+// =============================================================================
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+/**
+ * Retrieves paginated list of products with filtering and sorting
+ */
+export async function getProducts(
+  filters: ProductFilters = {},
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
+  sortColumn = "createdAt",
+  sortDirection: SortDirection = "desc"
+): Promise<
+  ActionResult<{ products: ProductTableData[]; pagination: PaginationConfig }>
+> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) return adminCheck;
 
-    // Get sort order
+  return withErrorHandling(async () => {
+    const whereClause = buildProductWhereConditions(filters);
     const sortOrder = sortDirection === "asc" ? asc : desc;
-    const sortField =
-      sortColumn === "name"
-        ? product.name
-        : sortColumn === "slug"
-          ? product.slug
-          : sortColumn === "type"
-            ? product.type
-            : sortColumn === "active"
-              ? product.active
-              : product.createdAt;
+    const sortField = getProductSortField(sortColumn);
 
-    // Execute queries using relational API
     const [products, totalResult] = await Promise.all([
       db.query.product.findMany({
         where: whereClause,
         orderBy: sortOrder(sortField),
         limit: pageSize,
-        offset: offset,
+        offset: calculateOffset(page, pageSize),
         with: {
-          licenses: {
-            columns: { id: true },
-          },
+          licenses: { columns: { id: true } },
         },
       }),
       db.select({ count: count() }).from(product).where(whereClause),
     ]);
 
-    const productsWithCounts = products.map((p) => ({
-      id: p.id,
-      name: p.name,
-      slug: p.slug,
-      description: p.description,
-      type: p.type,
-      active: p.active,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
-      _count: {
-        licenses: p.licenses.length,
-      },
-    }));
-
     const totalItems = totalResult[0]?.count ?? 0;
-    const totalPages = Math.ceil(totalItems / pageSize);
+    const productsWithCounts = products.map(transformProductWithLicenseCount);
 
-    return {
-      success: true,
-      data: {
-        products: productsWithCounts as ProductTableData[],
-        pagination: {
-          page,
-          pageSize,
-          totalItems,
-          totalPages,
-        },
-      },
-    };
-  } catch (error) {
-    console.error("Error fetching products:", error);
-    return { success: false, message: "Failed to fetch products" };
-  }
+    return success({
+      products: productsWithCounts,
+      pagination: calculatePagination(page, pageSize, totalItems),
+    });
+  }, "Failed to fetch products");
 }
 
-// Get all products for dropdown selection
+/**
+ * Retrieves all active products for dropdown selection
+ */
 export async function getAllProducts(): Promise<
   ActionResult<{ id: string; name: string; slug: string }[]>
 > {
   const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
+  if (!adminCheck.success) return adminCheck;
 
-  try {
+  return withErrorHandling(async () => {
     const products = await db.query.product.findMany({
       where: eq(product.active, true),
       orderBy: asc(product.name),
@@ -179,272 +191,33 @@ export async function getAllProducts(): Promise<
       },
     });
 
-    return { success: true, data: products };
-  } catch (error) {
-    console.error("Error fetching all products:", error);
-    return { success: false, message: "Failed to fetch products" };
-  }
+    return success(products);
+  }, "Failed to fetch products");
 }
 
-// Get single product by ID
+/**
+ * Retrieves a single product by ID
+ */
 export async function getProductById(
   id: string
 ): Promise<ActionResult<ProductTableData>> {
   const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
+  if (!adminCheck.success) return adminCheck;
 
-  try {
+  return withErrorHandling(async () => {
     const result = await db.query.product.findFirst({
       where: eq(product.id, id),
     });
 
-    if (!result) {
-      return { success: false, message: "Product not found" };
-    }
+    if (!result) return notFound("Product");
 
-    return { success: true, data: result as ProductTableData };
-  } catch (error) {
-    console.error("Error fetching product:", error);
-    return { success: false, message: "Failed to fetch product" };
-  }
+    return success(result as ProductTableData);
+  }, "Failed to fetch product");
 }
 
-// Create a new product
-export async function createProduct(
-  formData: FormData
-): Promise<ActionResult<ProductTableData>> {
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
-
-  try {
-    const rawData = {
-      name: formData.get("name") as string,
-      slug: formData.get("slug") as string,
-      description: (formData.get("description") as string) || undefined,
-      type: formData.get("type") as
-        | "plugin"
-        | "theme"
-        | "source_code"
-        | "other",
-      active: formData.get("active") === "true",
-    };
-
-    const validatedData = createProductSchema.safeParse(rawData);
-
-    if (!validatedData.success) {
-      return {
-        success: false,
-        message: "Validation failed",
-        errors: validatedData.error.flatten().fieldErrors,
-      };
-    }
-
-    // Check if slug already exists
-    const existingProduct = await db.query.product.findFirst({
-      where: eq(product.slug, validatedData.data.slug),
-    });
-
-    if (existingProduct) {
-      return {
-        success: false,
-        message: "A product with this slug already exists",
-      };
-    }
-
-    const newProduct = await db
-      .insert(product)
-      .values({
-        id: crypto.randomUUID(),
-        name: validatedData.data.name,
-        slug: validatedData.data.slug,
-        description: validatedData.data.description || null,
-        type: validatedData.data.type,
-        active: validatedData.data.active,
-      })
-      .returning();
-
-    revalidatePath("/admin/products");
-
-    return {
-      success: true,
-      message: "Product created successfully",
-      data: newProduct[0] as ProductTableData,
-    };
-  } catch (error) {
-    console.error("Error creating product:", error);
-    return { success: false, message: "Failed to create product" };
-  }
-}
-
-// Update an existing product
-export async function updateProduct(
-  formData: FormData
-): Promise<ActionResult<ProductTableData>> {
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
-
-  try {
-    const rawData = {
-      id: formData.get("id") as string,
-      name: formData.get("name") as string,
-      slug: formData.get("slug") as string,
-      description: (formData.get("description") as string) || undefined,
-      type: formData.get("type") as
-        | "plugin"
-        | "theme"
-        | "source_code"
-        | "other",
-      active: formData.get("active") === "true",
-    };
-
-    const validatedData = updateProductSchema.safeParse(rawData);
-
-    if (!validatedData.success) {
-      return {
-        success: false,
-        message: "Validation failed",
-        errors: validatedData.error.flatten().fieldErrors,
-      };
-    }
-
-    // Check if slug is taken by another product
-    const existingProduct = await db.query.product.findFirst({
-      where: and(
-        eq(product.slug, validatedData.data.slug),
-        sql`${product.id} != ${validatedData.data.id}`
-      ),
-    });
-
-    if (existingProduct) {
-      return {
-        success: false,
-        message: "A product with this slug already exists",
-      };
-    }
-
-    const updatedProduct = await db
-      .update(product)
-      .set({
-        name: validatedData.data.name,
-        slug: validatedData.data.slug,
-        description: validatedData.data.description || null,
-        type: validatedData.data.type,
-        active: validatedData.data.active,
-      })
-      .where(eq(product.id, validatedData.data.id))
-      .returning();
-
-    if (updatedProduct.length === 0) {
-      return { success: false, message: "Product not found" };
-    }
-
-    revalidatePath("/admin/products");
-
-    return {
-      success: true,
-      message: "Product updated successfully",
-      data: updatedProduct[0] as ProductTableData,
-    };
-  } catch (error) {
-    console.error("Error updating product:", error);
-    return { success: false, message: "Failed to update product" };
-  }
-}
-
-// Delete a product
-export async function deleteProduct(id: string): Promise<ActionResult> {
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
-
-  try {
-    // Check if product has licenses
-    const licenseCount = await db
-      .select({ count: count() })
-      .from(license)
-      .where(eq(license.productId, id));
-
-    if ((licenseCount[0]?.count ?? 0) > 0) {
-      return {
-        success: false,
-        message:
-          "Cannot delete product with existing licenses. Please delete or reassign licenses first.",
-      };
-    }
-
-    const deletedProduct = await db
-      .delete(product)
-      .where(eq(product.id, id))
-      .returning();
-
-    if (deletedProduct.length === 0) {
-      return { success: false, message: "Product not found" };
-    }
-
-    revalidatePath("/admin/products");
-
-    return { success: true, message: "Product deleted successfully" };
-  } catch (error) {
-    console.error("Error deleting product:", error);
-    return { success: false, message: "Failed to delete product" };
-  }
-}
-
-// Delete multiple products
-export async function deleteProducts(ids: string[]): Promise<ActionResult> {
-  const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
-
-  try {
-    if (ids.length === 0) {
-      return { success: false, message: "No products selected" };
-    }
-
-    // Check if any products have licenses
-    const licenseCount = await db
-      .select({ count: count() })
-      .from(license)
-      .where(
-        sql`${license.productId} IN (${sql.join(
-          ids.map((id) => sql`${id}`),
-          sql`, `
-        )})`
-      );
-
-    if ((licenseCount[0]?.count ?? 0) > 0) {
-      return {
-        success: false,
-        message:
-          "Cannot delete products with existing licenses. Please delete or reassign licenses first.",
-      };
-    }
-
-    for (const id of ids) {
-      await db.delete(product).where(eq(product.id, id));
-    }
-
-    revalidatePath("/admin/products");
-
-    return {
-      success: true,
-      message: `${ids.length} product(s) deleted successfully`,
-    };
-  } catch (error) {
-    console.error("Error deleting products:", error);
-    return { success: false, message: "Failed to delete products" };
-  }
-}
-
-// Get product statistics
+/**
+ * Gets aggregated product statistics
+ */
 export async function getProductStats(): Promise<
   ActionResult<{
     total: number;
@@ -454,11 +227,9 @@ export async function getProductStats(): Promise<
   }>
 > {
   const adminCheck = await requireAdmin();
-  if (!adminCheck.success) {
-    return adminCheck;
-  }
+  if (!adminCheck.success) return adminCheck;
 
-  try {
+  return withErrorHandling(async () => {
     const [totalResult, activeResult, typeResults] = await Promise.all([
       db.select({ count: count() }).from(product),
       db
@@ -466,10 +237,7 @@ export async function getProductStats(): Promise<
         .from(product)
         .where(eq(product.active, true)),
       db
-        .select({
-          type: product.type,
-          count: count(),
-        })
+        .select({ type: product.type, count: count() })
         .from(product)
         .groupBy(product.type),
     ]);
@@ -480,17 +248,196 @@ export async function getProductStats(): Promise<
       typeResults.map((r) => [r.type, r.count])
     );
 
-    return {
-      success: true,
-      data: {
-        total,
-        active,
-        inactive: total - active,
-        byType,
-      },
+    return success({
+      total,
+      active,
+      inactive: total - active,
+      byType,
+    });
+  }, "Failed to fetch product statistics");
+}
+
+// =============================================================================
+// WRITE OPERATIONS
+// =============================================================================
+
+/**
+ * Creates a new product
+ */
+export async function createProduct(
+  formData: FormData
+): Promise<ActionResult<ProductTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) return adminCheck;
+
+  return withErrorHandling(async () => {
+    const rawData = {
+      name: getFormField(formData, "name"),
+      slug: getFormField(formData, "slug"),
+      description: getOptionalField(formData, "description"),
+      type: getFormField(formData, "type") as ProductType,
+      active: getBooleanField(formData, "active"),
     };
-  } catch (error) {
-    console.error("Error fetching product stats:", error);
-    return { success: false, message: "Failed to fetch product statistics" };
-  }
+
+    const validated = productSchema.create.safeParse(rawData);
+    if (!validated.success) {
+      return validationError(validated.error.flatten().fieldErrors);
+    }
+
+    // Check for existing slug
+    const existingProduct = await db.query.product.findFirst({
+      where: eq(product.slug, validated.data.slug),
+    });
+
+    if (existingProduct) {
+      return failure("A product with this slug already exists");
+    }
+
+    const [newProduct] = await db
+      .insert(product)
+      .values({
+        id: generateId(),
+        name: validated.data.name,
+        slug: validated.data.slug,
+        description: validated.data.description ?? null,
+        type: validated.data.type,
+        active: validated.data.active,
+      })
+      .returning();
+
+    revalidatePath(REVALIDATION_PATH);
+
+    return success(
+      newProduct as ProductTableData,
+      "Product created successfully"
+    );
+  }, "Failed to create product");
+}
+
+/**
+ * Updates an existing product
+ */
+export async function updateProduct(
+  formData: FormData
+): Promise<ActionResult<ProductTableData>> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) return adminCheck;
+
+  return withErrorHandling(async () => {
+    const rawData = {
+      id: getFormField(formData, "id"),
+      name: getFormField(formData, "name"),
+      slug: getFormField(formData, "slug"),
+      description: getOptionalField(formData, "description"),
+      type: getFormField(formData, "type") as ProductType,
+      active: getBooleanField(formData, "active"),
+    };
+
+    const validated = productSchema.update.safeParse(rawData);
+    if (!validated.success) {
+      return validationError(validated.error.flatten().fieldErrors);
+    }
+
+    // Check if slug is taken by another product
+    const existingProduct = await db.query.product.findFirst({
+      where: and(
+        eq(product.slug, validated.data.slug),
+        sql`${product.id} != ${validated.data.id}`
+      ),
+    });
+
+    if (existingProduct) {
+      return failure("A product with this slug already exists");
+    }
+
+    const [updatedProduct] = await db
+      .update(product)
+      .set({
+        name: validated.data.name,
+        slug: validated.data.slug,
+        description: validated.data.description ?? null,
+        type: validated.data.type,
+        active: validated.data.active,
+      })
+      .where(eq(product.id, validated.data.id))
+      .returning();
+
+    if (!updatedProduct) return notFound("Product");
+
+    revalidatePath(REVALIDATION_PATH);
+
+    return success(
+      updatedProduct as ProductTableData,
+      "Product updated successfully"
+    );
+  }, "Failed to update product");
+}
+
+// =============================================================================
+// DELETE OPERATIONS
+// =============================================================================
+
+/**
+ * Checks if products have associated licenses
+ */
+async function hasAssociatedLicenses(productIds: string[]): Promise<boolean> {
+  const result = await db
+    .select({ count: count() })
+    .from(license)
+    .where(inArray(license.productId, productIds));
+
+  return (result[0]?.count ?? 0) > 0;
+}
+
+/**
+ * Deletes a single product by ID
+ */
+export async function deleteProduct(id: string): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) return adminCheck;
+
+  return withErrorHandling(async () => {
+    if (await hasAssociatedLicenses([id])) {
+      return failure(
+        "Cannot delete product with existing licenses. Please delete or reassign licenses first."
+      );
+    }
+
+    const [deletedProduct] = await db
+      .delete(product)
+      .where(eq(product.id, id))
+      .returning();
+
+    if (!deletedProduct) return notFound("Product");
+
+    revalidatePath(REVALIDATION_PATH);
+
+    return ok("Product deleted successfully");
+  }, "Failed to delete product");
+}
+
+/**
+ * Deletes multiple products by IDs
+ */
+export async function deleteProducts(ids: string[]): Promise<ActionResult> {
+  const adminCheck = await requireAdmin();
+  if (!adminCheck.success) return adminCheck;
+
+  return withErrorHandling(async () => {
+    if (ids.length === 0) {
+      return failure("No products selected");
+    }
+
+    if (await hasAssociatedLicenses(ids)) {
+      return failure(
+        "Cannot delete products with existing licenses. Please delete or reassign licenses first."
+      );
+    }
+
+    await db.delete(product).where(inArray(product.id, ids));
+
+    revalidatePath(REVALIDATION_PATH);
+
+    return ok(`${ids.length} product(s) deleted successfully`);
+  }, "Failed to delete products");
 }
