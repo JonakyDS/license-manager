@@ -190,7 +190,7 @@ export const listNaldaCsvUploadRequestsSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(10),
   status: z.enum(["pending", "processing", "processed", "failed"]).optional(),
-  csv_type: csvTypeSchema,
+  csv_type: csvTypeSchema.optional(),
 });
 
 // ============================================================================
