@@ -31,6 +31,8 @@ export const csvUploadStatusEnum = pgEnum("csv_upload_status", [
   "failed",
 ]);
 
+export const csvTypeEnum = pgEnum("csv_type", ["orders", "products"]);
+
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -227,6 +229,7 @@ export const naldaCsvUploadRequest = pgTable(
       .notNull()
       .references(() => license.id, { onDelete: "cascade" }),
     domain: text("domain").notNull(),
+    csvType: csvTypeEnum("csv_type").default("orders").notNull(),
     sftpHost: text("sftp_host").notNull(),
     sftpPort: integer("sftp_port").default(22).notNull(),
     sftpUsername: text("sftp_username").notNull(),
@@ -247,6 +250,7 @@ export const naldaCsvUploadRequest = pgTable(
   (table) => [
     index("csv_upload_license_id_idx").on(table.licenseId),
     index("csv_upload_status_idx").on(table.status),
+    index("csv_upload_csv_type_idx").on(table.csvType),
   ]
 );
 

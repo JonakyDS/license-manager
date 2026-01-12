@@ -6,6 +6,10 @@
  * Accepts a CSV file upload via multipart/form-data along with SFTP credentials.
  * The file is uploaded to both cloud storage (UploadThing) and SFTP server in parallel.
  *
+ * CSV Types:
+ * - "orders": Uploads to /order-status folder on SFTP
+ * - "products": Uploads to /products folder on SFTP
+ *
  * Security Features:
  * - License key and domain validation (required)
  * - Domain must be activated for the license
@@ -14,6 +18,16 @@
  * - File type and size validation
  * - SFTP credentials encrypted before storage
  * - Secure error handling (no sensitive data leakage)
+ *
+ * Request Body (multipart/form-data):
+ * - license_key: Required - The license key (XXXX-XXXX-XXXX-XXXX format)
+ * - domain: Required - The domain associated with the license
+ * - csv_type: Required - Type of CSV ("orders" or "products")
+ * - csv_file: Required - The CSV file to upload (max 16MB)
+ * - sftp_host: Required - SFTP hostname (must be *.nalda.com)
+ * - sftp_port: Optional - SFTP port (default: 22)
+ * - sftp_username: Required - SFTP username
+ * - sftp_password: Required - SFTP password
  *
  * Flow:
  * 1. Rate limit check
@@ -27,7 +41,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
-import { z } from "zod";
 import { Readable } from "stream";
 import SftpClient from "ssh2-sftp-client";
 import { db } from "@/db/drizzle";
@@ -36,7 +49,7 @@ import {
   validateLicenseAndDomainForNalda,
   maskLicenseKey,
 } from "@/lib/api/v2/utils";
-import { licenseKeySchema, domainSchema } from "@/lib/api/v2/validation";
+import { naldaCsvUploadFormSchema } from "@/lib/api/v2/validation";
 import {
   checkRateLimit,
   getClientIdentifier,
@@ -49,6 +62,7 @@ import type {
   ApiErrorResponse,
   ErrorCode,
   NaldaCsvUploadRequestResponseData,
+  CsvType,
 } from "@/lib/api/v2/types";
 
 // ============================================================================
@@ -69,55 +83,6 @@ const ALLOWED_MIME_TYPES = ["text/csv", "application/csv", "text/plain"];
 
 /** Allowed file extensions */
 const ALLOWED_EXTENSIONS = [".csv"];
-
-// ============================================================================
-// Validation Schemas
-// ============================================================================
-
-/**
- * Validates SFTP hostname - must be a subdomain of nalda.com
- */
-const sftpHostSchema = z
-  .string()
-  .min(1, "SFTP host is required")
-  .max(255, "SFTP host must be at most 255 characters")
-  .refine(
-    (val) => {
-      const naldaSubdomainRegex =
-        /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.nalda\.com$/i;
-      return naldaSubdomainRegex.test(val);
-    },
-    {
-      message:
-        "SFTP host must be a subdomain of nalda.com (e.g., sftp.nalda.com)",
-    }
-  );
-
-/**
- * Schema for validating form fields (excluding file)
- */
-const formFieldsSchema = z.object({
-  license_key: licenseKeySchema,
-  domain: domainSchema,
-  sftp_host: sftpHostSchema,
-  sftp_port: z.coerce
-    .number()
-    .int("Port must be an integer")
-    .min(1, "Port must be at least 1")
-    .max(65535, "Port must be at most 65535")
-    .default(22),
-  sftp_username: z
-    .string()
-    .min(1, "SFTP username is required")
-    .max(255, "SFTP username must be at most 255 characters")
-    .refine((val) => !/[\x00-\x1f\x7f]/.test(val), {
-      message: "SFTP username contains invalid characters",
-    }),
-  sftp_password: z
-    .string()
-    .min(1, "SFTP password is required")
-    .max(1024, "SFTP password must be at most 1024 characters"),
-});
 
 // ============================================================================
 // Types
@@ -392,10 +357,17 @@ interface SftpCredentials {
   password: string;
 }
 
+/** SFTP folder mapping for CSV types */
+const SFTP_FOLDERS: Record<CsvType, string> = {
+  orders: "/order-status",
+  products: "/products",
+};
+
 async function uploadToSftp(
   fileBuffer: Buffer,
   fileName: string,
-  credentials: SftpCredentials
+  credentials: SftpCredentials,
+  csvType: CsvType
 ): Promise<SftpUploadOutcome> {
   const sftp = new SftpClient();
 
@@ -410,9 +382,17 @@ async function uploadToSftp(
       retries: 0, // No retries - fail fast for user feedback
     });
 
-    // Get current directory and create remote path
-    const cwd = await sftp.cwd();
-    const remotePath = `${cwd}/${fileName}`;
+    // Get the target folder based on CSV type
+    const targetFolder = SFTP_FOLDERS[csvType];
+
+    // Ensure the target directory exists
+    const dirExists = await sftp.exists(targetFolder);
+    if (!dirExists) {
+      await sftp.mkdir(targetFolder, true);
+    }
+
+    // Create remote path with target folder
+    const remotePath = `${targetFolder}/${fileName}`;
 
     // Convert buffer to readable stream for upload
     const stream = Readable.from(fileBuffer);
@@ -573,13 +553,14 @@ export async function POST(
     const rawFields = {
       license_key: formData.get("license_key"),
       domain: formData.get("domain"),
+      csv_type: formData.get("csv_type"),
       sftp_host: formData.get("sftp_host"),
       sftp_port: formData.get("sftp_port") || "22",
       sftp_username: formData.get("sftp_username"),
       sftp_password: formData.get("sftp_password"),
     };
 
-    const validationResult = formFieldsSchema.safeParse(rawFields);
+    const validationResult = naldaCsvUploadFormSchema.safeParse(rawFields);
 
     if (!validationResult.success) {
       const fieldErrors: Record<string, string[]> = {};
@@ -602,6 +583,7 @@ export async function POST(
     const {
       license_key,
       domain,
+      csv_type,
       sftp_host,
       sftp_port,
       sftp_username,
@@ -612,6 +594,7 @@ export async function POST(
     logRequest("Request received", {
       license_key,
       domain,
+      csv_type,
       sftp_host,
       sftp_port,
       sftp_username,
@@ -652,12 +635,17 @@ export async function POST(
     // ========================================================================
     const [storageResult, sftpResult] = await Promise.all([
       uploadToStorage(csvFile),
-      uploadToSftp(fileBuffer, csvFile.name, {
-        host: sftp_host,
-        port: sftp_port,
-        username: sftp_username,
-        password: sftp_password,
-      }),
+      uploadToSftp(
+        fileBuffer,
+        csvFile.name,
+        {
+          host: sftp_host,
+          port: sftp_port,
+          username: sftp_username,
+          password: sftp_password,
+        },
+        csv_type
+      ),
     ]);
 
     // Check storage upload result
@@ -705,6 +693,7 @@ export async function POST(
       id: requestId,
       licenseId: licenseValidation.licenseId,
       domain,
+      csvType: csv_type,
       sftpHost: sftp_host,
       sftpPort: sftp_port,
       sftpUsername: sftp_username,
@@ -738,6 +727,7 @@ export async function POST(
       id: requestId,
       license_id: licenseValidation.licenseId,
       domain,
+      csv_type,
       csv_file_key: storageResult.key,
       csv_file_url: storageResult.url,
       csv_file_name: csvFile.name,

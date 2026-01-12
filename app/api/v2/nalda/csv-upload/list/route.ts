@@ -17,6 +17,7 @@
  * - page: Optional - Page number (default: 1)
  * - limit: Optional - Items per page (default: 10, max: 100)
  * - status: Optional - Filter by status (pending, processing, processed, failed)
+ * - csv_type: Optional - Filter by CSV type (orders, products)
  */
 
 import { NextRequest } from "next/server";
@@ -63,6 +64,7 @@ export async function GET(request: NextRequest) {
       page: searchParams.get("page") || "1",
       limit: searchParams.get("limit") || "10",
       status: searchParams.get("status") || undefined,
+      csv_type: searchParams.get("csv_type") || undefined,
     };
 
     // Validate query parameters
@@ -73,7 +75,8 @@ export async function GET(request: NextRequest) {
       return validationErrorResponse(validationResult.error);
     }
 
-    const { license_key, domain, page, limit, status } = validationResult.data;
+    const { license_key, domain, page, limit, status, csv_type } =
+      validationResult.data;
 
     logApiRequest(endpoint, "GET", {
       license_key,
@@ -81,6 +84,7 @@ export async function GET(request: NextRequest) {
       page,
       limit,
       status,
+      csv_type,
     });
 
     // Validate license and domain using shared utility
@@ -109,6 +113,10 @@ export async function GET(request: NextRequest) {
       whereConditions.push(eq(naldaCsvUploadRequest.status, status));
     }
 
+    if (csv_type) {
+      whereConditions.push(eq(naldaCsvUploadRequest.csvType, csv_type));
+    }
+
     // Get total count
     const [{ total }] = await db
       .select({ total: count() })
@@ -124,6 +132,7 @@ export async function GET(request: NextRequest) {
       .select({
         id: naldaCsvUploadRequest.id,
         domain: naldaCsvUploadRequest.domain,
+        csvType: naldaCsvUploadRequest.csvType,
         csvFileKey: naldaCsvUploadRequest.csvFileKey,
         csvFileUrl: naldaCsvUploadRequest.csvFileUrl,
         csvFileName: naldaCsvUploadRequest.csvFileName,
@@ -144,6 +153,7 @@ export async function GET(request: NextRequest) {
       (req) => ({
         id: req.id,
         domain: req.domain,
+        csv_type: req.csvType,
         csv_file_key: req.csvFileKey,
         csv_file_url: req.csvFileUrl,
         csv_file_name: req.csvFileName,

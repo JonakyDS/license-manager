@@ -88,20 +88,21 @@ export function validationError(
 // =============================================================================
 
 /**
- * Type-safe FormData getter
+ * Type-safe FormData getter with automatic trimming
  */
 export function getFormField(formData: FormData, key: string): string {
-  return (formData.get(key) as string) ?? "";
+  const value = formData.get(key) as string;
+  return value?.trim() ?? "";
 }
 
 /**
- * Gets optional string field from FormData
+ * Gets optional string field from FormData with automatic trimming
  */
 export function getOptionalField(
   formData: FormData,
   key: string
 ): string | undefined {
-  const value = formData.get(key) as string;
+  const value = (formData.get(key) as string)?.trim();
   return value || undefined;
 }
 

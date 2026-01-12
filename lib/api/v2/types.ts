@@ -178,9 +178,12 @@ export interface StatusResponseData {
 // Nalda CSV Upload Request Types
 // ============================================================================
 
+export type CsvType = "orders" | "products";
+
 export interface NaldaCsvUploadRequest {
   license_key: string;
   domain: string;
+  csv_type: CsvType;
   sftp_host: string;
   sftp_port: number;
   sftp_username: string;
@@ -192,6 +195,7 @@ export interface NaldaCsvUploadRequestResponseData {
   id: string;
   license_id: string;
   domain: string;
+  csv_type: CsvType;
   csv_file_key: string;
   csv_file_url: string;
   csv_file_name: string;
@@ -203,6 +207,7 @@ export interface NaldaCsvUploadRequestResponseData {
 export interface NaldaCsvUploadRequestListItem {
   id: string;
   domain: string;
+  csv_type: CsvType;
   csv_file_key: string;
   csv_file_url: string;
   csv_file_name: string;

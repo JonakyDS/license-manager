@@ -43,6 +43,13 @@
       "when": 1767549224760,
       "tag": "0005_outgoing_lucky_pierre",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1768244399212,
+      "tag": "0006_add_csv_type",
+      "breakpoints": true
     }
   ]
 }
