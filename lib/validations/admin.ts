@@ -126,6 +126,53 @@ export const csvUploadSchema = {
 } as const;
 
 // =============================================================================
+// SUBSCRIPTION & PRICING SCHEMAS
+// =============================================================================
+
+const subscriptionStatusEnum = z.enum([
+  "active",
+  "canceled",
+  "incomplete",
+  "incomplete_expired",
+  "past_due",
+  "trialing",
+  "unpaid",
+  "paused",
+]);
+
+const priceTypeEnum = z.enum(["one_time", "recurring"]);
+const priceIntervalEnum = z.enum(["day", "week", "month", "year"]);
+
+export const priceSchema = {
+  create: z.object({
+    productId: z.string().min(1, "Product is required"),
+    type: priceTypeEnum,
+    currency: z.string().default("usd"),
+    unitAmount: z.coerce.number().min(0, "Amount must be positive"),
+    interval: priceIntervalEnum.optional(),
+    intervalCount: z.coerce.number().min(1).optional().default(1),
+    trialPeriodDays: z.coerce.number().min(0).optional(),
+    active: z.boolean().optional().default(true),
+  }),
+
+  update: z.object({
+    id: validators.id.describe("Price ID is required"),
+    active: z.boolean(),
+  }),
+} as const;
+
+export const subscriptionSchema = {
+  cancel: z.object({
+    id: validators.id.describe("Subscription ID is required"),
+    immediate: z.boolean().optional().default(false),
+  }),
+
+  resume: z.object({
+    id: validators.id.describe("Subscription ID is required"),
+  }),
+} as const;
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -133,6 +180,9 @@ export type UserRole = z.infer<typeof userRoleEnum>;
 export type ProductType = z.infer<typeof productTypeEnum>;
 export type LicenseStatus = z.infer<typeof licenseStatusEnum>;
 export type CsvUploadStatus = z.infer<typeof csvUploadStatusEnum>;
+export type SubscriptionStatus = z.infer<typeof subscriptionStatusEnum>;
+export type PriceType = z.infer<typeof priceTypeEnum>;
+export type PriceInterval = z.infer<typeof priceIntervalEnum>;
 
 export type CreateUserInput = z.infer<typeof userSchema.create>;
 export type UpdateUserInput = z.infer<typeof userSchema.update>;
@@ -146,3 +196,9 @@ export type UpdateLicenseInput = z.infer<typeof licenseSchema.update>;
 export type UpdateCsvUploadStatusInput = z.infer<
   typeof csvUploadSchema.updateStatus
 >;
+
+export type CreatePriceInput = z.infer<typeof priceSchema.create>;
+export type UpdatePriceInput = z.infer<typeof priceSchema.update>;
+
+export type CancelSubscriptionInput = z.infer<typeof subscriptionSchema.cancel>;
+export type ResumeSubscriptionInput = z.infer<typeof subscriptionSchema.resume>;

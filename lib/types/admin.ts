@@ -148,3 +148,80 @@ export interface NavSection {
   title?: string;
   items: NavItem[];
 }
+
+// Price specific types
+export interface PriceFilters extends FilterConfig {
+  productId?: string;
+  type?: string;
+  status?: string;
+}
+
+export interface PriceTableData {
+  id: string;
+  productId: string;
+  stripePriceId: string;
+  type: "one_time" | "recurring";
+  active: boolean;
+  currency: string;
+  unitAmount: number;
+  interval: "day" | "week" | "month" | "year" | null;
+  intervalCount: number | null;
+  trialPeriodDays: number | null;
+  metadata: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  product?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+}
+
+// Subscription specific types
+export interface SubscriptionFilters extends FilterConfig {
+  userId?: string;
+  productId?: string;
+  status?: string;
+}
+
+export interface SubscriptionTableData {
+  id: string;
+  userId: string;
+  priceId: string;
+  stripeSubscriptionId: string;
+  status:
+    | "active"
+    | "canceled"
+    | "incomplete"
+    | "incomplete_expired"
+    | "past_due"
+    | "trialing"
+    | "unpaid"
+    | "paused";
+  currentPeriodStart: Date;
+  currentPeriodEnd: Date;
+  cancelAtPeriodEnd: boolean;
+  canceledAt: Date | null;
+  endedAt: Date | null;
+  trialStart: Date | null;
+  trialEnd: Date | null;
+  metadata: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  price?: {
+    id: string;
+    unitAmount: number;
+    currency: string;
+    interval: "day" | "week" | "month" | "year" | null;
+    product?: {
+      id: string;
+      name: string;
+      slug: string;
+    };
+  };
+}

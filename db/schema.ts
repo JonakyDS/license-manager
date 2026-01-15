@@ -7,9 +7,30 @@ import {
   index,
   pgEnum,
   integer,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
+
+export const subscriptionStatusEnum = pgEnum("subscription_status", [
+  "active",
+  "canceled",
+  "incomplete",
+  "incomplete_expired",
+  "past_due",
+  "trialing",
+  "unpaid",
+  "paused",
+]);
+
+export const priceTypeEnum = pgEnum("price_type", ["one_time", "recurring"]);
+
+export const priceIntervalEnum = pgEnum("price_interval", [
+  "day",
+  "week",
+  "month",
+  "year",
+]);
 
 export const productTypeEnum = pgEnum("product_type", [
   "plugin",
@@ -40,6 +61,7 @@ export const user = pgTable("user", {
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
   role: userRoleEnum("role").default("user").notNull(),
+  stripeCustomerId: text("stripe_customer_id").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -110,6 +132,7 @@ export const verification = pgTable(
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
+  subscriptions: many(subscription),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -134,6 +157,8 @@ export const product = pgTable(
     slug: text("slug").notNull().unique(),
     description: text("description"),
     type: productTypeEnum("type").notNull(),
+    features: text("features"), // JSON string of feature list
+    stripeProductId: text("stripe_product_id").unique(),
     active: boolean("active").default(true).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -141,8 +166,84 @@ export const product = pgTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [index("product_slug_idx").on(table.slug)]
+  (table) => [
+    index("product_slug_idx").on(table.slug),
+    index("product_stripe_id_idx").on(table.stripeProductId),
+  ]
 );
+
+// =============================================================================
+// STRIPE PRICING TABLES
+// =============================================================================
+
+export const price = pgTable(
+  "price",
+  {
+    id: text("id").primaryKey(),
+    productId: text("product_id")
+      .notNull()
+      .references(() => product.id, { onDelete: "cascade" }),
+    stripePriceId: text("stripe_price_id").notNull().unique(),
+    type: priceTypeEnum("type").notNull(),
+    active: boolean("active").default(true).notNull(),
+    currency: text("currency").default("usd").notNull(),
+    unitAmount: integer("unit_amount").notNull(), // Amount in cents
+    interval: priceIntervalEnum("interval"), // null for one_time
+    intervalCount: integer("interval_count").default(1), // e.g., every 3 months
+    trialPeriodDays: integer("trial_period_days"),
+    metadata: text("metadata"), // JSON string for additional price metadata
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("price_product_id_idx").on(table.productId),
+    index("price_stripe_price_id_idx").on(table.stripePriceId),
+    index("price_type_idx").on(table.type),
+  ]
+);
+
+export const subscription = pgTable(
+  "subscription",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    priceId: text("price_id")
+      .notNull()
+      .references(() => price.id, { onDelete: "restrict" }),
+    stripeSubscriptionId: text("stripe_subscription_id").notNull().unique(),
+    status: subscriptionStatusEnum("status").default("incomplete").notNull(),
+    currentPeriodStart: timestamp("current_period_start").notNull(),
+    currentPeriodEnd: timestamp("current_period_end").notNull(),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),
+    canceledAt: timestamp("canceled_at"),
+    endedAt: timestamp("ended_at"),
+    trialStart: timestamp("trial_start"),
+    trialEnd: timestamp("trial_end"),
+    metadata: text("metadata"), // JSON string for additional subscription metadata
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("subscription_user_id_idx").on(table.userId),
+    index("subscription_price_id_idx").on(table.priceId),
+    index("subscription_stripe_subscription_id_idx").on(
+      table.stripeSubscriptionId
+    ),
+    index("subscription_status_idx").on(table.status),
+  ]
+);
+
+// =============================================================================
+// LICENSE TABLES
+// =============================================================================
 
 export const license = pgTable(
   "license",
@@ -201,6 +302,26 @@ export const licenseActivation = pgTable(
 
 export const productRelations = relations(product, ({ many }) => ({
   licenses: many(license),
+  prices: many(price),
+}));
+
+export const priceRelations = relations(price, ({ one, many }) => ({
+  product: one(product, {
+    fields: [price.productId],
+    references: [product.id],
+  }),
+  subscriptions: many(subscription),
+}));
+
+export const subscriptionRelations = relations(subscription, ({ one }) => ({
+  user: one(user, {
+    fields: [subscription.userId],
+    references: [user.id],
+  }),
+  price: one(price, {
+    fields: [subscription.priceId],
+    references: [price.id],
+  }),
 }));
 
 export const licenseRelations = relations(license, ({ one, many }) => ({
