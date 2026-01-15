@@ -14,3 +14,4 @@ export { ViewDialog } from "./view-dialog";
 export { DetailRow } from "./detail-row";
 export { AdminSidebar, AdminMobileSidebar } from "./admin-sidebar";
 export { AdminHeader } from "./admin-header";
+export { StripeSyncCard } from "./stripe-sync-card";
