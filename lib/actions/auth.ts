@@ -23,6 +23,22 @@ export type {
 } from "@/lib/types/auth";
 
 // =============================================================================
+// SUPER ADMIN CHECK
+// =============================================================================
+
+/**
+ * Checks if a user email is the super admin
+ * Super admin email is defined in SUPER_ADMIN_EMAIL env variable
+ * Note: Not exported because Server Actions must be async
+ */
+function isSuperAdmin(email: string): boolean {
+  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL;
+  return (
+    !!superAdminEmail && email.toLowerCase() === superAdminEmail.toLowerCase()
+  );
+}
+
+// =============================================================================
 // AUTH FUNCTIONS
 // =============================================================================
 
@@ -40,10 +56,12 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
 }
 
 /**
- * Requires the current user to be an authenticated admin
+ * Requires the current user to be an authenticated admin or super admin
  *
  * Use this at the start of any admin-only server action.
  * Returns the authenticated user on success for use in the action.
+ *
+ * Super admin is determined by SUPER_ADMIN_EMAIL env variable.
  *
  * @example
  * ```ts
@@ -67,7 +85,8 @@ export async function requireAdmin(): Promise<
     return { success: false, message: "Unauthorized: You must be logged in" };
   }
 
-  if (user.role !== "admin") {
+  // Check if user is admin role OR super admin by email
+  if (user.role !== "admin" && !isSuperAdmin(user.email)) {
     return { success: false, message: "Forbidden: Admin access required" };
   }
 

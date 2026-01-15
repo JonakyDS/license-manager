@@ -4,6 +4,13 @@ import { auth } from "@/lib/auth";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { AdminHeader } from "@/components/admin/admin-header";
 
+function isSuperAdmin(email: string): boolean {
+  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL;
+  return (
+    !!superAdminEmail && email.toLowerCase() === superAdminEmail.toLowerCase()
+  );
+}
+
 export default async function AdminLayout({
   children,
 }: {
@@ -18,8 +25,8 @@ export default async function AdminLayout({
     redirect("/sign-in");
   }
 
-  // Redirect to dashboard if not an admin
-  if (session.user.role !== "admin") {
+  // Redirect to dashboard if not an admin or super admin
+  if (session.user.role !== "admin" && !isSuperAdmin(session.user.email)) {
     redirect("/dashboard");
   }
 
