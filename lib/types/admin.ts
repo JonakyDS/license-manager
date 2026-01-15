@@ -63,11 +63,14 @@ export interface ProductTableData {
   slug: string;
   description: string | null;
   type: "plugin" | "theme" | "source_code" | "other";
+  features: string | null; // JSON string of feature list
+  stripeProductId: string | null;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
   _count?: {
     licenses: number;
+    prices: number;
   };
 }
 

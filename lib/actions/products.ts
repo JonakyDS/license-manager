@@ -8,7 +8,7 @@
  */
 
 import { db } from "@/db/drizzle";
-import { product, license } from "@/db/schema";
+import { product, license, price } from "@/db/schema";
 import {
   eq,
   ilike,
@@ -107,7 +107,10 @@ function buildProductWhereConditions(filters: ProductFilters) {
  * Transforms raw product with licenses to ProductTableData
  */
 function transformProductWithLicenseCount(
-  p: typeof product.$inferSelect & { licenses: { id: string }[] }
+  p: typeof product.$inferSelect & {
+    licenses: { id: string }[];
+    prices: { id: string }[];
+  }
 ): ProductTableData {
   return {
     id: p.id,
@@ -115,11 +118,14 @@ function transformProductWithLicenseCount(
     slug: p.slug,
     description: p.description,
     type: p.type,
+    features: p.features,
+    stripeProductId: p.stripeProductId,
     active: p.active,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     _count: {
       licenses: p.licenses.length,
+      prices: p.prices.length,
     },
   };
 }
@@ -156,6 +162,7 @@ export async function getProducts(
         offset: calculateOffset(page, pageSize),
         with: {
           licenses: { columns: { id: true } },
+          prices: { columns: { id: true } },
         },
       }),
       db.select({ count: count() }).from(product).where(whereClause),
@@ -276,6 +283,8 @@ export async function createProduct(
       slug: getFormField(formData, "slug"),
       description: getOptionalField(formData, "description"),
       type: getFormField(formData, "type") as ProductType,
+      features: getOptionalField(formData, "features"),
+      stripeProductId: getOptionalField(formData, "stripeProductId"),
       active: getBooleanField(formData, "active"),
     };
 
@@ -301,6 +310,8 @@ export async function createProduct(
         slug: validated.data.slug,
         description: validated.data.description ?? null,
         type: validated.data.type,
+        features: validated.data.features ?? null,
+        stripeProductId: validated.data.stripeProductId ?? null,
         active: validated.data.active,
       })
       .returning();
@@ -330,6 +341,8 @@ export async function updateProduct(
       slug: getFormField(formData, "slug"),
       description: getOptionalField(formData, "description"),
       type: getFormField(formData, "type") as ProductType,
+      features: getOptionalField(formData, "features"),
+      stripeProductId: getOptionalField(formData, "stripeProductId"),
       active: getBooleanField(formData, "active"),
     };
 
@@ -357,6 +370,8 @@ export async function updateProduct(
         slug: validated.data.slug,
         description: validated.data.description ?? null,
         type: validated.data.type,
+        features: validated.data.features ?? null,
+        stripeProductId: validated.data.stripeProductId ?? null,
         active: validated.data.active,
       })
       .where(eq(product.id, validated.data.id))

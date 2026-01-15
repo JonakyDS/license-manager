@@ -13,6 +13,9 @@ import {
   XCircleIcon,
   KeyIcon,
   FileTextIcon,
+  CreditCardIcon,
+  ListIcon,
+  DollarSignIcon,
 } from "lucide-react";
 
 interface ProductViewDialogProps {
@@ -95,6 +98,46 @@ export function ProductViewDialog({
             label="Licenses"
             value={`${product._count?.licenses ?? 0} license(s)`}
           />
+          <DetailRow
+            icon={<DollarSignIcon className="size-4" />}
+            label="Prices"
+            value={`${product._count?.prices ?? 0} price(s)`}
+          />
+          {product.stripeProductId && (
+            <DetailRow
+              icon={<CreditCardIcon className="size-4" />}
+              label="Stripe Product ID"
+              value={
+                <code className="bg-muted rounded px-2 py-1 text-xs">
+                  {product.stripeProductId}
+                </code>
+              }
+            />
+          )}
+          {product.features && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <ListIcon className="text-muted-foreground size-4" />
+                <p className="text-muted-foreground text-xs">Features</p>
+              </div>
+              <ul className="bg-muted list-inside list-disc space-y-1 rounded-lg p-3 text-sm">
+                {(() => {
+                  try {
+                    const features = JSON.parse(product.features);
+                    return Array.isArray(features) ? (
+                      features.map((feature: string, idx: number) => (
+                        <li key={idx}>{feature}</li>
+                      ))
+                    ) : (
+                      <li>{product.features}</li>
+                    );
+                  } catch {
+                    return <li>{product.features}</li>;
+                  }
+                })()}
+              </ul>
+            </div>
+          )}
           {product.description && (
             <div className="space-y-2">
               <p className="text-muted-foreground text-xs">Description</p>

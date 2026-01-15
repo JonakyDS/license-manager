@@ -91,17 +91,28 @@ async function getProducts(): Promise<ProductCardProps[]> {
     },
   });
 
-  return products.map((p) => ({
-    id: p.id,
-    name: p.name,
-    slug: p.slug,
-    description: p.description,
-    type: p.type,
-    features: p.features ? JSON.parse(p.features) : undefined,
-    startingPrice: p.prices[0]?.unitAmount,
-    currency: p.prices[0]?.currency,
-    interval: p.prices[0]?.interval ?? undefined,
-  }));
+  return products.map((p) => {
+    let features: string[] | undefined;
+    if (p.features) {
+      try {
+        features = JSON.parse(p.features);
+      } catch {
+        // If features is not valid JSON, treat as undefined
+        features = undefined;
+      }
+    }
+    return {
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      description: p.description,
+      type: p.type,
+      features,
+      startingPrice: p.prices[0]?.unitAmount,
+      currency: p.prices[0]?.currency,
+      interval: p.prices[0]?.interval ?? undefined,
+    };
+  });
 }
 
 export default async function HomePage() {

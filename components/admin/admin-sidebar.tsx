@@ -29,6 +29,8 @@ import {
   ChevronRightIcon,
   HomeIcon,
   FileUpIcon,
+  CreditCardIcon,
+  DollarSignIcon,
 } from "lucide-react";
 import type { NavItem, NavSection } from "@/lib/types/admin";
 
@@ -54,6 +56,16 @@ const navSections: NavSection[] = [
         title: "Products",
         href: "/admin/products",
         icon: PackageIcon,
+      },
+      {
+        title: "Prices",
+        href: "/admin/prices",
+        icon: DollarSignIcon,
+      },
+      {
+        title: "Subscriptions",
+        href: "/admin/subscriptions",
+        icon: CreditCardIcon,
       },
       {
         title: "Licenses",

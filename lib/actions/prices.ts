@@ -401,3 +401,36 @@ export async function getProductPrices(
     return success(prices as PriceTableData[]);
   }, "Failed to fetch product prices");
 }
+
+// =============================================================================
+// TOGGLE PRICE STATUS
+// =============================================================================
+
+export async function togglePriceStatus(
+  id: string,
+  active: boolean
+): Promise<ActionResult> {
+  const adminResult = await requireAdmin();
+  if (!adminResult.success) return adminResult;
+
+  return withErrorHandling(async () => {
+    const existingPrice = await db.query.price.findFirst({
+      where: eq(price.id, id),
+    });
+
+    if (!existingPrice) {
+      return notFound("Price");
+    }
+
+    // Update in Stripe
+    await stripe.prices.update(existingPrice.stripePriceId, {
+      active,
+    });
+
+    // Update in database
+    await db.update(price).set({ active }).where(eq(price.id, id));
+
+    revalidatePath(REVALIDATION_PATH);
+    return ok(`Price ${active ? "activated" : "deactivated"} successfully`);
+  }, "Failed to toggle price status");
+}

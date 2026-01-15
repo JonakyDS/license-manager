@@ -91,13 +91,13 @@ function buildSubscriptionWhereConditions(filters: SubscriptionFilters) {
 // ADMIN: LIST SUBSCRIPTIONS
 // =============================================================================
 
-export async function getSubscriptions(params: {
-  filters?: SubscriptionFilters;
-  page?: number;
-  pageSize?: number;
-  sortColumn?: string;
-  sortDirection?: SortDirection;
-}): Promise<
+export async function getSubscriptions(
+  filters: SubscriptionFilters = {},
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
+  sortColumn = "createdAt",
+  sortDirection: SortDirection = "desc"
+): Promise<
   ActionResult<{
     subscriptions: SubscriptionTableData[];
     pagination: PaginationConfig;
@@ -107,14 +107,6 @@ export async function getSubscriptions(params: {
   if (!adminResult.success) return adminResult;
 
   return withErrorHandling(async () => {
-    const {
-      filters = {},
-      page = 1,
-      pageSize = DEFAULT_PAGE_SIZE,
-      sortColumn = "createdAt",
-      sortDirection = "desc",
-    } = params;
-
     const whereConditions = buildSubscriptionWhereConditions(filters);
     const sortField = getSubscriptionSortField(sortColumn);
     const orderFn = sortDirection === "asc" ? asc : desc;

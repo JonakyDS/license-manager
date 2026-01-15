@@ -152,6 +152,15 @@ export function ProductsClient({ initialData }: ProductsClientProps) {
         ),
       },
       {
+        key: "prices",
+        label: "Prices",
+        render: (product) => (
+          <span className="text-muted-foreground">
+            {product._count?.prices ?? 0}
+          </span>
+        ),
+      },
+      {
         key: "licenses",
         label: "Licenses",
         render: (product) => (

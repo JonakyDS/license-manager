@@ -61,6 +61,8 @@ export const productSchema = {
     slug: validators.slug,
     description: z.string().optional(),
     type: productTypeEnum,
+    features: z.string().optional(), // JSON string of feature array
+    stripeProductId: z.string().optional(),
     active: z.boolean().optional().default(true),
   }),
 
@@ -70,6 +72,8 @@ export const productSchema = {
     slug: validators.slug,
     description: z.string().optional(),
     type: productTypeEnum,
+    features: z.string().optional(), // JSON string of feature array
+    stripeProductId: z.string().optional(),
     active: z.boolean().optional(),
   }),
 } as const;

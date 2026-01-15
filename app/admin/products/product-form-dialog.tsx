@@ -169,6 +169,50 @@ export function ProductFormDialog({
               />
             </div>
 
+            {/* Features */}
+            <div className="grid gap-2">
+              <Label htmlFor="features">Features (one per line)</Label>
+              <Textarea
+                id="features"
+                name="features"
+                placeholder="Feature 1&#10;Feature 2&#10;Feature 3"
+                defaultValue={(() => {
+                  if (!product?.features) return "";
+                  try {
+                    const parsed = JSON.parse(product.features);
+                    return Array.isArray(parsed) ? parsed.join("\n") : "";
+                  } catch {
+                    return "";
+                  }
+                })()}
+                rows={4}
+                disabled={isLoading}
+                onChange={(e) => {
+                  // Store features as JSON array in hidden input
+                  const hiddenInput = document.getElementById(
+                    "features-json"
+                  ) as HTMLInputElement;
+                  if (hiddenInput) {
+                    const features = e.target.value
+                      .split("\n")
+                      .map((f) => f.trim())
+                      .filter(Boolean);
+                    hiddenInput.value = JSON.stringify(features);
+                  }
+                }}
+              />
+              <input
+                type="hidden"
+                id="features-json"
+                name="features"
+                defaultValue={product?.features || "[]"}
+              />
+              <p className="text-muted-foreground text-xs">
+                Enter each feature on a new line. These will be displayed on the
+                product page.
+              </p>
+            </div>
+
             {/* Type */}
             <div className="grid gap-2">
               <Label htmlFor="type">Type</Label>
@@ -191,6 +235,22 @@ export function ProductFormDialog({
               {errors.type && (
                 <p className="text-destructive text-sm">{errors.type[0]}</p>
               )}
+            </div>
+
+            {/* Stripe Product ID */}
+            <div className="grid gap-2">
+              <Label htmlFor="stripeProductId">Stripe Product ID</Label>
+              <Input
+                id="stripeProductId"
+                name="stripeProductId"
+                placeholder="prod_xxxxx"
+                defaultValue={product?.stripeProductId || ""}
+                disabled={isLoading}
+              />
+              <p className="text-muted-foreground text-xs">
+                Link to a Stripe product for subscription billing. Leave empty
+                if not using Stripe.
+              </p>
             </div>
 
             {/* Active Status */}
